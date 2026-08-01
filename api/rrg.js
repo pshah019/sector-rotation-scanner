@@ -210,6 +210,44 @@ export function scoreCandidates(cands, sectorChgByEtf) {
   });
 }
 
+/**
+ * Pick the final list.
+ *
+ * "spread" mode round-robins across the qualifying sectors (strongest sector
+ * first), taking each sector's best remaining candidate before any sector gets
+ * a second slot. The point of the tool is to see WHERE rotation is happening,
+ * and a pure global ranking lets one hot sector eat every slot — on 2026-07-31
+ * a straight top-7 returned 4 healthcare names and skipped XLY, XLF and XLP
+ * entirely even though all three qualified.
+ *
+ * "score" mode is the old behaviour, kept so the two can be compared.
+ */
+export function selectPicks(scored, sectorOrder, topN, spread) {
+  if (!spread) return scored.slice(0, topN);
+
+  const bySector = new Map();
+  for (const c of scored) {
+    if (!bySector.has(c.sectorEtf)) bySector.set(c.sectorEtf, []);
+    bySector.get(c.sectorEtf).push(c); // already score-desc
+  }
+
+  const picks = [];
+  let placedThisRound = true;
+  while (picks.length < topN && placedThisRound) {
+    placedThisRound = false;
+    for (const sec of sectorOrder) {
+      if (picks.length >= topN) break;
+      const list = bySector.get(sec);
+      if (list && list.length) {
+        picks.push(list.shift());
+        placedThisRound = true;
+      }
+    }
+  }
+  // Selection is spread; presentation stays strongest-first.
+  return picks.sort((a, b) => b.score - a.score);
+}
+
 // Sunday -> Saturday week bounds for the run's as-of date.
 export function weekBounds(isoDate) {
   const d = new Date(isoDate + 'T00:00:00Z');
@@ -238,6 +276,7 @@ export default async function handler(req, res) {
   const maxAngle = q.maxAngle !== undefined ? parseFloat(q.maxAngle) : 90;
   const minMemberChg = q.minMemberChg !== undefined ? parseFloat(q.minMemberChg) : 0;
   const topN = Math.max(1, Math.min(50, parseInt(q.topN, 10) || 7));
+  const spread = q.spread === undefined ? true : q.spread === '1' || q.spread === 'true';
 
   const t0 = Date.now();
   try {
@@ -287,7 +326,13 @@ export default async function handler(req, res) {
     );
 
     const scored = scoreCandidates(candidates, sectorChgByEtf).sort((a, b) => b.score - a.score);
-    const picks = scored.slice(0, topN);
+    const picks = selectPicks(scored, qualifying.map((s) => s.symbol), topN, spread);
+
+    // Per-sector candidate counts, so an empty sector is visibly empty rather
+    // than silently absent from the picks.
+    const bySector = {};
+    qualifying.forEach((s) => (bySector[s.symbol] = 0));
+    scored.forEach((c) => (bySector[c.sectorEtf] = (bySector[c.sectorEtf] || 0) + 1));
 
     const asOfDate = (sectors.asOf || '').slice(0, 10);
     const { weekStart, weekEnd } = weekBounds(asOfDate || new Date().toISOString().slice(0, 10));
@@ -300,9 +345,10 @@ export default async function handler(req, res) {
       weekEnd,
       generatedAt: new Date().toISOString(),
       elapsedMs: Date.now() - t0,
-      params: { tail, months, period, minSectorChg, minAngle, maxAngle, minMemberChg, topN },
+      params: { tail, months, period, minSectorChg, minAngle, maxAngle, minMemberChg, topN, spread },
       sectors: sectors.rows,
       qualifyingSectors: qualifying.map((s) => s.symbol),
+      candidatesBySector: bySector,
       universeSize: allMembers.length,
       candidateCount: scored.length,
       picks,
