@@ -166,6 +166,9 @@ export function deriveMetrics(payload, symbols, tail) {
 // Improving (crossed up, not yet leading) and Lagging-turning-up rank above a
 // name already parked in Leading.
 const QUAD_WEIGHT = { Improving: 1.3, Lagging: 1.2, Leading: 1.0, Weakening: 0.9 };
+// Scores are rescaled by the largest weight so a perfect Improving name lands
+// at 100 instead of overflowing into a clipped tie at the top of the table.
+const MAX_QUAD_WEIGHT = Math.max(...Object.values(QUAD_WEIGHT));
 
 // Direction quality: peaks at a true 45 degree NE heading, falls to 0 at due
 // east (0, drifting right with no momentum gain) and due north (90).
@@ -202,7 +205,7 @@ export function scoreCandidates(cands, sectorChgByEtf) {
         sectorStrength: r2(secQ * 100),
         quadrantWeight: qw,
       },
-      score: r2(Math.min(100, 100 * raw * qw)),
+      score: r2((100 * raw * qw) / MAX_QUAD_WEIGHT),
     };
   });
 }
