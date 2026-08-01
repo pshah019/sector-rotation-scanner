@@ -88,6 +88,11 @@
     font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-width:250px}
   #tip b{font-size:13px}
   .status{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
+    padding:4px 10px;border-radius:999px;border:1px solid var(--hair);color:var(--ink-2)}
+  .pill.on{color:var(--good)} .pill.off{color:var(--muted)}
+  .connect{display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 0}
+  .connect p{margin:0;color:var(--muted);font-size:13px;text-align:center;max-width:440px}
   .spin{width:12px;height:12px;border:2px solid var(--muted);border-top-color:transparent;
     border-radius:50%;animation:sp .7s linear infinite;display:none}
   .spin.on{display:block}
@@ -114,6 +119,7 @@
   </div>
   <div class="spacer"></div>
   <div class="status"><span class="spin" id="spin"></span><span id="status">Ready</span></div>
+  <span class="pill off" id="sbPill"><span class="dot" style="background:currentColor"></span>Supabase</span>
   <button id="theme" title="Toggle light / dark">◐</button>
   <button id="settings">Supabase</button>
   <button class="danger" id="clearWeek">Clear week</button>
@@ -201,8 +207,9 @@
   <input id="sbUrl" placeholder="https://xxxx.supabase.co">
   <label style="font-size:11px;color:var(--muted)">Anon key</label>
   <input id="sbKey" type="password" placeholder="eyJ...">
-  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
-    <button id="dlgClose">Cancel</button><button class="primary" id="dlgSave">Save</button>
+  <div id="dlgMsg" style="color:var(--bad);font-size:12px;min-height:16px;margin-bottom:6px"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end">
+    <button id="dlgClose">Cancel</button><button class="primary" id="dlgSave">Save &amp; test</button>
   </div>
 </dialog>
 
@@ -222,8 +229,11 @@ $('#theme').onclick = () => {
 };
 
 /* ---------- supabase ---------- */
+// Project URL is not a secret, so it ships pre-filled — the only thing that
+// ever needs pasting is the anon key, and it stays in this browser.
+const SB_DEFAULT_URL = 'https://ihlggfdwbhgechoqvrri.supabase.co';
 const SB = {
-  url: () => localStorage.getItem('rrg.sbUrl') || '',
+  url: () => localStorage.getItem('rrg.sbUrl') || SB_DEFAULT_URL,
   key: () => localStorage.getItem('rrg.sbKey') || '',
   on:  () => !!(SB.url() && SB.key()),
   hdr: () => ({ apikey: SB.key(), Authorization: 'Bearer ' + SB.key(), 'Content-Type': 'application/json' }),
@@ -244,13 +254,36 @@ const SB = {
     if (!r.ok) throw new Error('Supabase delete ' + r.status);
   }
 };
-$('#settings').onclick = () => { $('#sbUrl').value = SB.url(); $('#sbKey').value = SB.key(); $('#dlg').showModal(); };
+function openSettings() { $('#sbUrl').value = SB.url(); $('#sbKey').value = SB.key(); $('#dlg').showModal(); $('#sbKey').focus(); }
+$('#settings').onclick = openSettings;
 $('#dlgClose').onclick = () => $('#dlg').close();
-$('#dlgSave').onclick = () => {
-  localStorage.setItem('rrg.sbUrl', $('#sbUrl').value.trim().replace(/\/$/, ''));
-  localStorage.setItem('rrg.sbKey', $('#sbKey').value.trim());
-  $('#dlg').close(); setStatus('Supabase saved'); loadHistory();
+$('#dlgSave').onclick = async () => {
+  const url = ($('#sbUrl').value.trim() || SB_DEFAULT_URL).replace(/\/$/, '');
+  const key = $('#sbKey').value.trim();
+  $('#dlgSave').disabled = true;
+  $('#dlgMsg').textContent = 'Testing connection…';
+  try {
+    // Prove the key actually reaches the table before storing it, so a bad
+    // paste fails here instead of silently swallowing every future run.
+    const r = await fetch(url + '/rest/v1/rrg_runs?select=id&limit=1',
+      { headers: { apikey: key, Authorization: 'Bearer ' + key } });
+    if (!r.ok) throw new Error(`${r.status} — ${(await r.text()).slice(0, 120)}`);
+    localStorage.setItem('rrg.sbUrl', url);
+    localStorage.setItem('rrg.sbKey', key);
+    $('#dlgMsg').textContent = '';
+    $('#dlg').close();
+    setStatus('Supabase connected — runs will be saved');
+    refreshPill(); loadHistory();
+  } catch (e) {
+    $('#dlgMsg').textContent = 'Could not connect: ' + e.message;
+  } finally { $('#dlgSave').disabled = false; }
 };
+
+function refreshPill() {
+  const el = $('#sbPill'), on = SB.on();
+  el.className = 'pill ' + (on ? 'on' : 'off');
+  el.lastChild.textContent = on ? 'Supabase connected' : 'Supabase not connected';
+}
 
 function setStatus(t, busy) { $('#status').textContent = t; $('#spin').classList.toggle('on', !!busy); }
 
@@ -314,7 +347,12 @@ $('#clearWeek').onclick = async () => {
 /* ---------- history ---------- */
 async function loadHistory() {
   const el = $('#history');
-  if (!SB.on()) { el.innerHTML = '<div class="empty">Connect Supabase to store runs.</div>'; return; }
+  if (!SB.on()) {
+    el.innerHTML = '<div class="connect"><p>Runs aren\'t being saved yet. Paste your Supabase <b>anon</b> key to store every scan for the week — the key stays in this browser and never leaves it.</p>' +
+      '<button class="primary" id="connectBtn">Connect Supabase</button></div>';
+    $('#connectBtn').onclick = openSettings;
+    return;
+  }
   const ws = DATA ? DATA.weekStart : weekStartOf(new Date().toISOString().slice(0, 10));
   $('#histHint').textContent = `Runs stored for the week starting ${ws}.`;
   try {
@@ -521,6 +559,7 @@ function drawRRG(sel, rows, title, highlight) {
   });
 }
 
+refreshPill();
 loadHistory();
 </script>
 </body>
