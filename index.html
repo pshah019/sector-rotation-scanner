@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sector Rotation Scanner</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --surface-1:#1a1a19; --plane:#0d0d0d; --raised:#232322;
+    --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --hair:rgba(255,255,255,0.10);
+    --leading:#0ca30c; --improving:#3987e5; --weakening:#c98500; --lagging:#e66767;
+    --wash-leading:rgba(12,163,12,0.10); --wash-improving:rgba(57,135,229,0.10);
+    --wash-weakening:rgba(201,133,0,0.10); --wash-lagging:rgba(230,103,103,0.10);
+    --good:#0ca30c; --bad:#e66767; --accent:#3987e5;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --surface-1:#fcfcfb; --plane:#f9f9f7; --raised:#ffffff;
+    --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --axis:#c3c2b7; --hair:rgba(11,11,11,0.10);
+    --leading:#0ca30c; --improving:#2a78d6; --weakening:#eda100; --lagging:#d03b3b;
+    --wash-leading:rgba(12,163,12,0.09); --wash-improving:rgba(42,120,214,0.09);
+    --wash-weakening:rgba(237,161,0,0.10); --wash-lagging:rgba(208,59,59,0.09);
+    --good:#006300; --bad:#d03b3b; --accent:#2a78d6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--plane);color:var(--ink);
+    font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    padding:14px 20px;background:var(--surface-1);border-bottom:1px solid var(--hair);
+    position:sticky;top:0;z-index:40}
+  h1{font-size:16px;margin:0;font-weight:650;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:12px}
+  .spacer{flex:1}
+  button{font:inherit;color:var(--ink);background:var(--raised);
+    border:1px solid var(--hair);border-radius:8px;padding:7px 12px;cursor:pointer}
+  button:hover{border-color:var(--muted)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .primary{background:var(--accent);border-color:transparent;color:#fff;font-weight:600;padding:9px 18px}
+  .danger{color:var(--bad);border-color:var(--hair)}
+  main{padding:20px;max-width:1500px;margin:0 auto;display:grid;gap:18px}
+  .card{background:var(--surface-1);border:1px solid var(--hair);border-radius:12px;padding:16px}
+  .card h2{font-size:13px;margin:0 0 2px;font-weight:650;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-2)}
+  .card .hint{color:var(--muted);font-size:12px;margin:0 0 14px}
+  .filters{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
+  .f{display:flex;flex-direction:column;gap:4px}
+  .f label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .f input,.f select{font:inherit;color:var(--ink);background:var(--plane);
+    border:1px solid var(--hair);border-radius:7px;padding:6px 9px;width:110px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media (max-width:1100px){.grid2{grid-template-columns:1fr}}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  th,td{text-align:right;padding:7px 9px;border-bottom:1px solid var(--hair);white-space:nowrap}
+  th{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;
+    cursor:pointer;user-select:none}
+  td:first-child,th:first-child,td.l,th.l{text-align:left}
+  tbody tr:hover{background:var(--raised)}
+  .sym{font-weight:650}
+  .pos{color:var(--good)} .neg{color:var(--bad)}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+    padding:2px 8px;border-radius:999px;border:1px solid var(--hair)}
+  .dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .q-Leading{color:var(--leading)} .q-Improving{color:var(--improving)}
+  .q-Weakening{color:var(--weakening)} .q-Lagging{color:var(--lagging)}
+  .bg-Leading{background:var(--leading)} .bg-Improving{background:var(--improving)}
+  .bg-Weakening{background:var(--weakening)} .bg-Lagging{background:var(--lagging)}
+  .picks{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+  .pick{background:var(--raised);border:1px solid var(--hair);border-radius:10px;padding:12px;position:relative}
+  .pick .rank{position:absolute;top:10px;right:12px;font-size:11px;color:var(--muted)}
+  .pick .t{font-size:20px;font-weight:680;letter-spacing:-.02em}
+  .pick .n{font-size:11px;color:var(--muted);margin:1px 0 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pick .row{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-2);margin-top:3px}
+  .meter{height:3px;background:var(--grid);border-radius:2px;margin-top:10px;overflow:hidden}
+  .meter i{display:block;height:100%;background:var(--accent)}
+  .sectorbar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .chip{font-size:12px;padding:5px 11px;border-radius:999px;border:1px solid var(--hair);
+    background:var(--raised);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .chip[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  svg{display:block;width:100%;height:auto;overflow:visible}
+  .tick{font-size:10px;fill:var(--muted)}
+  .axlbl{font-size:11px;fill:var(--ink-2)}
+  .qlbl{font-size:11px;font-weight:600;letter-spacing:.04em}
+  .plabel{font-size:10px;font-weight:600;fill:var(--ink)}
+  #tip{position:fixed;pointer-events:none;opacity:0;transition:opacity .1s;z-index:99;
+    background:var(--raised);border:1px solid var(--hair);border-radius:8px;padding:8px 10px;
+    font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-width:250px}
+  #tip b{font-size:13px}
+  .status{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}
+  .spin{width:12px;height:12px;border:2px solid var(--muted);border-top-color:transparent;
+    border-radius:50%;animation:sp .7s linear infinite;display:none}
+  .spin.on{display:block}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .empty{color:var(--muted);padding:26px 0;text-align:center;font-size:13px}
+  details summary{cursor:pointer;color:var(--muted);font-size:12px}
+  .kv{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--ink-2)}
+  .kv b{color:var(--ink);font-weight:650}
+  dialog{background:var(--surface-1);color:var(--ink);border:1px solid var(--hair);
+    border-radius:12px;padding:20px;max-width:480px;width:92%}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  dialog input{width:100%;margin-bottom:10px}
+  .warn{background:var(--wash-weakening);border:1px solid var(--hair);border-radius:8px;
+    padding:9px 12px;font-size:12px;color:var(--ink-2);margin-bottom:12px}
+  .loading{opacity:.45}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Sector Rotation Scanner</h1>
+    <div class="sub">StockCharts RRG · JdK RS-Ratio / RS-Momentum · benchmark SPY, members vs their sector ETF</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="status"><span class="spin" id="spin"></span><span id="status">Ready</span></div>
+  <button id="theme" title="Toggle light / dark">◐</button>
+  <button id="settings">Supabase</button>
+  <button class="danger" id="clearWeek">Clear week</button>
+  <button class="primary" id="run">▶ Run scan</button>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>Scan parameters</h2>
+    <p class="hint">Defaults reproduce the StockCharts view: daily, 3-month range, 7-bar tail. %CHG is the price change across the tail, which is what the StockCharts table column measures.</p>
+    <div class="filters">
+      <div class="f"><label for="p-tail">Tail length</label><input id="p-tail" type="number" value="7" min="2" max="30"></div>
+      <div class="f"><label for="p-months">Range (months)</label><input id="p-months" type="number" value="3" min="1" max="24"></div>
+      <div class="f"><label for="p-period">Period</label><select id="p-period"><option value="d">Daily</option><option value="w">Weekly</option></select></div>
+      <div class="f"><label for="p-sec">Min sector %</label><input id="p-sec" type="number" value="0.5" step="0.1"></div>
+      <div class="f"><label for="p-ang">Min arrow angle</label><input id="p-ang" type="number" value="15" min="0" max="89"></div>
+      <div class="f"><label for="p-top">Top N</label><input id="p-top" type="number" value="7" min="1" max="50"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Top picks</h2>
+    <p class="hint" id="picksHint">Members of qualifying sectors whose latest RRG step points up and to the right, ranked by rotation quality.</p>
+    <div class="picks" id="picks"><div class="empty">Press <b>Run scan</b> to pull the current StockCharts RRG.</div></div>
+  </section>
+
+  <section class="card">
+    <h2>Picks detail</h2>
+    <p class="hint">Score = 35% heading quality (peaks at a true 45° NE arrow) + 25% step size + 25% tail % change + 15% sector strength, multiplied by a quadrant weight that favours early rotation (Improving ×1.30, Lagging ×1.20, Leading ×1.00, Weakening ×0.90).</p>
+    <div style="overflow-x:auto"><table id="pickTable"><thead><tr>
+      <th class="l">#</th><th class="l">Ticker</th><th class="l">Name</th><th class="l">Sector</th>
+      <th class="l">Quadrant</th><th>RS-Ratio</th><th>RS-Mom</th><th>Angle</th>
+      <th>Step</th><th>Tail %</th><th>Price</th><th>Score</th>
+    </tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Sector RRG · vs SPY</h2>
+      <p class="hint" id="secHint">All 11 SPDR sectors. Filled markers clear the minimum tail % change and feed the member scan.</p>
+      <div id="secChart"></div>
+    </section>
+    <section class="card">
+      <h2>Member RRG · vs sector ETF</h2>
+      <div class="sectorbar" id="sectorChips"></div>
+      <div id="memChart"><div class="empty">Run a scan, then pick a sector.</div></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Sector table</h2>
+    <p class="hint">Sorted by tail % change. Sectors at or above the threshold qualify for the member scan.</p>
+    <div style="overflow-x:auto"><table id="secTable"><thead><tr>
+      <th class="l">Sector</th><th class="l">ETF</th><th class="l">Quadrant</th>
+      <th>RS-Ratio</th><th>RS-Mom</th><th>Angle</th><th>Tail %</th><th>Price</th><th class="l">Qualifies</th>
+    </tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2>All qualifying candidates</h2>
+    <p class="hint">Every up-and-right member across qualifying sectors, not just the top N. Click a column to sort.</p>
+    <div style="overflow-x:auto;max-height:460px"><table id="candTable"><thead><tr>
+      <th class="l" data-k="symbol">Ticker</th><th class="l" data-k="sectorEtf">Sector</th>
+      <th class="l" data-k="quadrant">Quadrant</th><th data-k="ratio">RS-Ratio</th><th data-k="mom">RS-Mom</th>
+      <th data-k="angle">Angle</th><th data-k="magnitude">Step</th><th data-k="chg">Tail %</th><th data-k="score">Score</th>
+    </tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2>Run history · this week</h2>
+    <p class="hint" id="histHint">Runs stored in Supabase for the current Sunday–Saturday week.</p>
+    <div id="history"><div class="empty">Connect Supabase to store runs.</div></div>
+  </section>
+
+</main>
+
+<div id="tip"></div>
+
+<dialog id="dlg">
+  <h3 style="margin:0 0 4px;font-size:15px">Supabase connection</h3>
+  <p style="color:var(--muted);font-size:12px;margin:0 0 14px">
+    Stored in this browser only (localStorage). Use the project's <b>anon</b> public key — never the service role key.</p>
+  <label style="font-size:11px;color:var(--muted)">Project URL</label>
+  <input id="sbUrl" placeholder="https://xxxx.supabase.co">
+  <label style="font-size:11px;color:var(--muted)">Anon key</label>
+  <input id="sbKey" type="password" placeholder="eyJ...">
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+    <button id="dlgClose">Cancel</button><button class="primary" id="dlgSave">Save</button>
+  </div>
+</dialog>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const QUADS = ['Leading','Weakening','Lagging','Improving'];
+let DATA = null, ACTIVE_SECTOR = null, CAND_SORT = {k:'score', dir:-1};
+
+/* ---------- theme ---------- */
+const savedTheme = localStorage.getItem('rrg.theme');
+if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+$('#theme').onclick = () => {
+  const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t;
+  localStorage.setItem('rrg.theme', t);
+  if (DATA) render();
+};
+
+/* ---------- supabase ---------- */
+const SB = {
+  url: () => localStorage.getItem('rrg.sbUrl') || '',
+  key: () => localStorage.getItem('rrg.sbKey') || '',
+  on:  () => !!(SB.url() && SB.key()),
+  hdr: () => ({ apikey: SB.key(), Authorization: 'Bearer ' + SB.key(), 'Content-Type': 'application/json' }),
+  async insert(row) {
+    const r = await fetch(SB.url() + '/rest/v1/rrg_runs', {
+      method: 'POST', headers: { ...SB.hdr(), Prefer: 'return=minimal' }, body: JSON.stringify(row) });
+    if (!r.ok) throw new Error('Supabase insert ' + r.status + ': ' + (await r.text()).slice(0, 200));
+  },
+  async week(ws) {
+    const r = await fetch(SB.url() + '/rest/v1/rrg_runs?week_start=eq.' + ws +
+      '&select=id,run_at,as_of,params,picks&order=run_at.desc', { headers: SB.hdr() });
+    if (!r.ok) throw new Error('Supabase read ' + r.status);
+    return r.json();
+  },
+  async clear(ws) {
+    const r = await fetch(SB.url() + '/rest/v1/rrg_runs?week_start=eq.' + ws,
+      { method: 'DELETE', headers: SB.hdr() });
+    if (!r.ok) throw new Error('Supabase delete ' + r.status);
+  }
+};
+$('#settings').onclick = () => { $('#sbUrl').value = SB.url(); $('#sbKey').value = SB.key(); $('#dlg').showModal(); };
+$('#dlgClose').onclick = () => $('#dlg').close();
+$('#dlgSave').onclick = () => {
+  localStorage.setItem('rrg.sbUrl', $('#sbUrl').value.trim().replace(/\/$/, ''));
+  localStorage.setItem('rrg.sbKey', $('#sbKey').value.trim());
+  $('#dlg').close(); setStatus('Supabase saved'); loadHistory();
+};
+
+function setStatus(t, busy) { $('#status').textContent = t; $('#spin').classList.toggle('on', !!busy); }
+
+/* ---------- week helper (mirrors the server) ---------- */
+function weekStartOf(iso) {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+  return d.toISOString().slice(0, 10);
+}
+
+/* ---------- run ---------- */
+$('#run').onclick = run;
+async function run() {
+  const qs = new URLSearchParams({
+    tail: $('#p-tail').value, months: $('#p-months').value, period: $('#p-period').value,
+    minSectorChg: $('#p-sec').value, minAngle: $('#p-ang').value, topN: $('#p-top').value
+  });
+  $('#run').disabled = true;
+  document.querySelectorAll('main .card').forEach(c => c.classList.add('loading'));
+  setStatus('Pulling StockCharts RRG…', true);
+  try {
+    const r = await fetch('/api/rrg?' + qs.toString());
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'scan failed');
+    DATA = j;
+    ACTIVE_SECTOR = (j.qualifyingSectors && j.qualifyingSectors[0]) || null;
+    render();
+    setStatus(`Done · ${j.candidateCount} candidates from ${j.universeSize} names · ${(j.elapsedMs/1000).toFixed(1)}s`);
+    if (SB.on()) {
+      try {
+        await SB.insert({
+          week_start: j.weekStart, week_end: j.weekEnd, as_of: j.asOfDate,
+          params: j.params,
+          sectors: j.sectors.map(s => ({ symbol:s.symbol, name:s.name, ratio:s.ratio, mom:s.mom,
+                                         chg:s.chg, quadrant:s.quadrant, angle:s.angle })),
+          picks: j.picks.map(p => ({ symbol:p.symbol, name:p.name, sector:p.sectorEtf, quadrant:p.quadrant,
+                                     ratio:p.ratio, mom:p.mom, angle:p.angle, chg:p.chg,
+                                     price:p.price, score:p.score }))
+        });
+        setStatus(`Done · saved to Supabase · ${j.candidateCount} candidates`);
+        loadHistory();
+      } catch (e) { setStatus('Scan OK, Supabase save failed: ' + e.message); }
+    }
+  } catch (e) {
+    setStatus('Failed: ' + e.message);
+  } finally {
+    $('#run').disabled = false;
+    document.querySelectorAll('main .card').forEach(c => c.classList.remove('loading'));
+  }
+}
+
+/* ---------- clear week ---------- */
+$('#clearWeek').onclick = async () => {
+  if (!SB.on()) return setStatus('Connect Supabase first');
+  const ws = DATA ? DATA.weekStart : weekStartOf(new Date().toISOString().slice(0, 10));
+  if (!confirm(`Delete every stored run for the week starting ${ws}? This cannot be undone.`)) return;
+  try { await SB.clear(ws); setStatus('Cleared week ' + ws); loadHistory(); }
+  catch (e) { setStatus('Clear failed: ' + e.message); }
+};
+
+/* ---------- history ---------- */
+async function loadHistory() {
+  const el = $('#history');
+  if (!SB.on()) { el.innerHTML = '<div class="empty">Connect Supabase to store runs.</div>'; return; }
+  const ws = DATA ? DATA.weekStart : weekStartOf(new Date().toISOString().slice(0, 10));
+  $('#histHint').textContent = `Runs stored for the week starting ${ws}.`;
+  try {
+    const rows = await SB.week(ws);
+    if (!rows.length) { el.innerHTML = '<div class="empty">No runs stored for this week yet.</div>'; return; }
+    el.innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th class="l">Run</th><th class="l">As of</th>' +
+      '<th>Tail</th><th class="l">Picks</th></tr></thead><tbody>' +
+      rows.map(r => `<tr><td class="l">${new Date(r.run_at).toLocaleString()}</td>
+        <td class="l">${r.as_of || ''}</td><td>${(r.params && r.params.tail) || ''}</td>
+        <td class="l">${(r.picks || []).map(p => `<span class="sym">${p.symbol}</span>`).join(', ')}</td></tr>`).join('') +
+      '</tbody></table></div>';
+  } catch (e) { el.innerHTML = `<div class="empty">History unavailable: ${e.message}</div>`; }
+}
+
+/* ---------- render ---------- */
+function pct(v) { const c = v > 0 ? 'pos' : v < 0 ? 'neg' : ''; return `<span class="${c}">${v > 0 ? '+' : ''}${v.toFixed(2)}%</span>`; }
+function qbadge(q) { return `<span class="badge q-${q}"><span class="dot bg-${q}"></span>${q}</span>`; }
+
+function render() {
+  const d = DATA;
+  $('#picksHint').textContent =
+    `${d.candidateCount} of ${d.universeSize} members across ${d.qualifyingSectors.length} qualifying sectors point up-and-right. Data as of ${d.asOf}.`;
+
+  // picks cards
+  $('#picks').innerHTML = d.picks.length ? d.picks.map((p, i) => `
+    <div class="pick">
+      <div class="rank">#${i + 1}</div>
+      <div class="t">${p.symbol}</div>
+      <div class="n" title="${p.name}">${p.name}</div>
+      <div>${qbadge(p.quadrant)}</div>
+      <div class="row"><span>Sector</span><b>${p.sectorEtf}</b></div>
+      <div class="row"><span>Arrow</span><b>${p.angle.toFixed(0)}° NE</b></div>
+      <div class="row"><span>Tail %</span><b>${pct(p.chg)}</b></div>
+      <div class="row"><span>Score</span><b>${p.score.toFixed(1)}</b></div>
+      <div class="meter"><i style="width:${Math.min(100, p.score)}%"></i></div>
+    </div>`).join('') : '<div class="empty">No members met the filter. Loosen the minimum angle or sector threshold.</div>';
+
+  // picks table
+  $('#pickTable tbody').innerHTML = d.picks.map((p, i) => `<tr>
+    <td class="l">${i + 1}</td><td class="l sym">${p.symbol}</td><td class="l">${p.name}</td>
+    <td class="l">${p.sectorEtf}</td><td class="l">${qbadge(p.quadrant)}</td>
+    <td>${p.ratio.toFixed(2)}</td><td>${p.mom.toFixed(2)}</td><td>${p.angle.toFixed(0)}°</td>
+    <td>${p.magnitude.toFixed(2)}</td><td>${pct(p.chg)}</td><td>${p.price.toFixed(2)}</td>
+    <td><b>${p.score.toFixed(1)}</b></td></tr>`).join('');
+
+  // sector table
+  $('#secTable tbody').innerHTML = d.sectors.map(s => {
+    const ok = d.qualifyingSectors.includes(s.symbol);
+    return `<tr${ok ? '' : ' style="opacity:.55"'}>
+      <td class="l">${s.name}</td><td class="l sym">${s.symbol}</td><td class="l">${qbadge(s.quadrant)}</td>
+      <td>${s.ratio.toFixed(2)}</td><td>${s.mom.toFixed(2)}</td><td>${s.angle.toFixed(0)}°</td>
+      <td>${pct(s.chg)}</td><td>${s.price.toFixed(2)}</td>
+      <td class="l">${ok ? '<span class="badge q-Leading"><span class="dot bg-Leading"></span>Yes</span>' : '—'}</td></tr>`;
+  }).join('');
+  $('#secHint').textContent =
+    `All 11 SPDR sectors vs SPY. ${d.qualifyingSectors.length} at or above ${d.params.minSectorChg}% over the ${d.params.tail}-bar tail: ${d.qualifyingSectors.join(', ') || 'none'}.`;
+
+  renderCands();
+
+  // sector chips
+  $('#sectorChips').innerHTML = d.qualifyingSectors.map(s => {
+    const sec = d.sectors.find(x => x.symbol === s);
+    return `<button class="chip" data-sec="${s}" aria-pressed="${s === ACTIVE_SECTOR}">
+      <span class="dot bg-${sec.quadrant}"></span>${s}<span style="color:var(--muted)">${sec.chg > 0 ? '+' : ''}${sec.chg.toFixed(2)}%</span></button>`;
+  }).join('') || '<span class="empty">No qualifying sectors.</span>';
+  $('#sectorChips').querySelectorAll('.chip').forEach(b => b.onclick = () => { ACTIVE_SECTOR = b.dataset.sec; render(); });
+
+  drawRRG('#secChart', d.sectors, 'Sectors vs SPY', d.qualifyingSectors);
+  const mem = d.members.find(m => m.sector === ACTIVE_SECTOR);
+  if (mem && mem.rows.length) {
+    const picked = new Set(d.picks.map(p => p.symbol));
+    drawRRG('#memChart', mem.rows, `${ACTIVE_SECTOR} members vs ${ACTIVE_SECTOR}`, [...picked]);
+  } else {
+    $('#memChart').innerHTML = '<div class="empty">No member data for this sector.</div>';
+  }
+  loadHistory();
+}
+
+function renderCands() {
+  const rows = [...DATA.candidates].sort((a, b) => {
+    const k = CAND_SORT.k, x = a[k], y = b[k];
+    return (typeof x === 'string' ? String(x).localeCompare(String(y)) : x - y) * CAND_SORT.dir;
+  });
+  $('#candTable tbody').innerHTML = rows.map(c => `<tr>
+    <td class="l sym">${c.symbol}</td><td class="l">${c.sectorEtf}</td><td class="l">${qbadge(c.quadrant)}</td>
+    <td>${c.ratio.toFixed(2)}</td><td>${c.mom.toFixed(2)}</td><td>${c.angle.toFixed(0)}°</td>
+    <td>${c.magnitude.toFixed(2)}</td><td>${pct(c.chg)}</td><td>${c.score.toFixed(1)}</td></tr>`).join('')
+    || '<tr><td colspan="9" class="empty">No candidates.</td></tr>';
+}
+document.querySelectorAll('#candTable th').forEach(th => th.onclick = () => {
+  const k = th.dataset.k; if (!k || !DATA) return;
+  CAND_SORT = { k, dir: CAND_SORT.k === k ? -CAND_SORT.dir : -1 };
+  renderCands();
+});
+
+/* ---------- RRG scatter ---------- */
+function drawRRG(sel, rows, title, highlight) {
+  const host = $(sel);
+  const W = 640, H = 470, M = { t: 16, r: 16, b: 40, l: 46 };
+  const pw = W - M.l - M.r, ph = H - M.t - M.b;
+  const hi = new Set(highlight || []);
+
+  const xs = [], ys = [];
+  rows.forEach(r => r.path.forEach(p => { xs.push(p[0]); ys.push(p[1]); }));
+  if (!xs.length) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
+  const pad = (a) => { const lo = Math.min(...a, 100), hi2 = Math.max(...a, 100);
+    const s = Math.max((hi2 - lo) * 0.10, 0.35); return [lo - s, hi2 + s]; };
+  const [x0, x1] = pad(xs), [y0, y1] = pad(ys);
+  const X = v => M.l + (v - x0) / (x1 - x0) * pw;
+  const Y = v => M.t + ph - (v - y0) / (y1 - y0) * ph;
+  const cx = X(100), cy = Y(100);
+
+  const ticks = (lo, hi2) => { const step = (hi2 - lo) > 12 ? 2 : (hi2 - lo) > 6 ? 1 : 0.5;
+    const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi2; v += step) out.push(+v.toFixed(2)); return out; };
+
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}">`;
+  // quadrant washes
+  s += `<rect x="${M.l}" y="${M.t}" width="${cx - M.l}" height="${cy - M.t}" fill="var(--wash-improving)"/>`;
+  s += `<rect x="${cx}" y="${M.t}" width="${M.l + pw - cx}" height="${cy - M.t}" fill="var(--wash-leading)"/>`;
+  s += `<rect x="${M.l}" y="${cy}" width="${cx - M.l}" height="${M.t + ph - cy}" fill="var(--wash-lagging)"/>`;
+  s += `<rect x="${cx}" y="${cy}" width="${M.l + pw - cx}" height="${M.t + ph - cy}" fill="var(--wash-weakening)"/>`;
+  // grid
+  ticks(x0, x1).forEach(v => { s += `<line x1="${X(v)}" y1="${M.t}" x2="${X(v)}" y2="${M.t + ph}" stroke="var(--grid)" stroke-width="1"/>
+    <text class="tick" x="${X(v)}" y="${M.t + ph + 14}" text-anchor="middle">${v}</text>`; });
+  ticks(y0, y1).forEach(v => { s += `<line x1="${M.l}" y1="${Y(v)}" x2="${M.l + pw}" y2="${Y(v)}" stroke="var(--grid)" stroke-width="1"/>
+    <text class="tick" x="${M.l - 7}" y="${Y(v) + 3}" text-anchor="end">${v}</text>`; });
+  // centre cross
+  s += `<line x1="${cx}" y1="${M.t}" x2="${cx}" y2="${M.t + ph}" stroke="var(--axis)" stroke-width="1.5"/>`;
+  s += `<line x1="${M.l}" y1="${cy}" x2="${M.l + pw}" y2="${cy}" stroke="var(--axis)" stroke-width="1.5"/>`;
+  // quadrant labels
+  s += `<text class="qlbl" x="${M.l + 8}" y="${M.t + 15}" fill="var(--improving)">IMPROVING</text>`;
+  s += `<text class="qlbl" x="${M.l + pw - 8}" y="${M.t + 15}" text-anchor="end" fill="var(--leading)">LEADING</text>`;
+  s += `<text class="qlbl" x="${M.l + 8}" y="${M.t + ph - 6}" fill="var(--lagging)">LAGGING</text>`;
+  s += `<text class="qlbl" x="${M.l + pw - 8}" y="${M.t + ph - 6}" text-anchor="end" fill="var(--weakening)">WEAKENING</text>`;
+  // axis titles
+  s += `<text class="axlbl" x="${M.l + pw / 2}" y="${H - 6}" text-anchor="middle">JdK RS-Ratio</text>`;
+  s += `<text class="axlbl" transform="translate(12,${M.t + ph / 2}) rotate(-90)" text-anchor="middle">JdK RS-Momentum</text>`;
+
+  // tails
+  rows.forEach(r => {
+    const on = hi.has(r.symbol);
+    const col = `var(--${r.quadrant.toLowerCase()})`;
+    const pts = r.path.map(p => `${X(p[0])},${Y(p[1])}`).join(' ');
+    s += `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${on ? 2 : 1.25}"
+      stroke-linejoin="round" opacity="${on ? .95 : .34}"/>`;
+    r.path.slice(0, -1).forEach(p => {
+      s += `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="1.7" fill="${col}" opacity="${on ? .8 : .28}"/>`;
+    });
+  });
+  // arrowheads + labels on top. Labels are placed greedily — highlighted names
+  // claim their slot first, the rest step aside rather than overprint.
+  const placed = [];
+  const findSlot = (x, y, on) => {
+    const offs = on ? [0] : [0, -11, 11, -21, 21, -31, 31];
+    for (const dy of offs) {
+      const yy = y + dy;
+      if (!placed.some(p => Math.abs(p.x - x) < 30 && Math.abs(p.y - yy) < 10)) return yy;
+    }
+    return null; // too crowded: drop the label, tooltip still carries it
+  };
+  const order = [...rows].sort((a, b) => (hi.has(b.symbol) ? 1 : 0) - (hi.has(a.symbol) ? 1 : 0));
+  order.forEach(r => {
+    const on = hi.has(r.symbol);
+    const col = `var(--${r.quadrant.toLowerCase()})`;
+    const n = r.path.length, a = r.path[n - 2], b = r.path[n - 1];
+    const ax = X(a[0]), ay = Y(a[1]), bx = X(b[0]), by = Y(b[1]);
+    const ang = Math.atan2(by - ay, bx - ax), L = on ? 11 : 8, w = on ? 5 : 3.6;
+    const tipx = bx, tipy = by;
+    const p1 = [tipx - L * Math.cos(ang) + w * Math.sin(ang), tipy - L * Math.sin(ang) - w * Math.cos(ang)];
+    const p2 = [tipx - L * Math.cos(ang) - w * Math.sin(ang), tipy - L * Math.sin(ang) + w * Math.cos(ang)];
+    s += `<polygon points="${tipx},${tipy} ${p1[0]},${p1[1]} ${p2[0]},${p2[1]}" fill="${col}"
+      opacity="${on ? 1 : .45}" stroke="var(--surface-1)" stroke-width="${on ? 1 : 0}"/>`;
+    const lx = tipx + 7, ly = findSlot(lx, tipy + 3.5, on);
+    if (ly !== null) {
+      placed.push({ x: lx, y: ly });
+      if (Math.abs(ly - (tipy + 3.5)) > 6)
+        s += `<line x1="${tipx + 3}" y1="${tipy}" x2="${lx - 1}" y2="${ly - 3}" stroke="${col}"
+          stroke-width="0.75" opacity=".4"/>`;
+      s += `<text class="plabel" x="${lx}" y="${ly}" opacity="${on ? 1 : .55}"
+        style="font-size:${on ? 11 : 9.5}px">${r.symbol}</text>`;
+    }
+    s += `<circle class="hit" cx="${tipx}" cy="${tipy}" r="13" fill="transparent"
+      data-s="${r.symbol}" data-n="${(r.name||'').replace(/"/g,'')}" data-q="${r.quadrant}"
+      data-r="${r.ratio}" data-m="${r.mom}" data-a="${r.angle}" data-c="${r.chg}" data-p="${r.price}"
+      style="cursor:pointer"/>`;
+  });
+  s += '</svg>';
+  host.innerHTML = s;
+
+  const tip = $('#tip');
+  host.querySelectorAll('.hit').forEach(h => {
+    h.addEventListener('mousemove', e => {
+      const d = h.dataset;
+      tip.innerHTML = `<b>${d.s}</b> <span style="color:var(--muted)">${d.n}</span><br>
+        <span class="q-${d.q}">● ${d.q}</span><br>
+        RS-Ratio ${(+d.r).toFixed(2)} · RS-Mom ${(+d.m).toFixed(2)}<br>
+        Arrow ${(+d.a).toFixed(0)}° · Tail ${(+d.c) > 0 ? '+' : ''}${(+d.c).toFixed(2)}%<br>
+        Price ${(+d.p).toFixed(2)}`;
+      tip.style.opacity = 1;
+      tip.style.left = Math.min(e.clientX + 14, innerWidth - 260) + 'px';
+      tip.style.top = (e.clientY + 14) + 'px';
+    });
+    h.addEventListener('mouseleave', () => tip.style.opacity = 0);
+  });
+}
+
+loadHistory();
+</script>
+</body>
+</html>
