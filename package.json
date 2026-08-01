@@ -1,0 +1,7 @@
+{
+  "name": "sector-rotation-scanner",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "RRG-based sector rotation scanner using StockCharts JdK RS-Ratio / RS-Momentum data"
+}
