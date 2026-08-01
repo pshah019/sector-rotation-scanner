@@ -138,6 +138,10 @@
       <div class="f"><label for="p-sec">Min sector %</label><input id="p-sec" type="number" value="0.5" step="0.1"></div>
       <div class="f"><label for="p-ang">Min arrow angle</label><input id="p-ang" type="number" value="15" min="0" max="89"></div>
       <div class="f"><label for="p-top">Top N</label><input id="p-top" type="number" value="7" min="1" max="50"></div>
+      <div class="f"><label for="p-spread">Selection</label><select id="p-spread" style="width:190px">
+        <option value="1">Spread across sectors</option>
+        <option value="0">Pure score</option>
+      </select></div>
     </div>
   </section>
 
@@ -299,7 +303,8 @@ $('#run').onclick = run;
 async function run() {
   const qs = new URLSearchParams({
     tail: $('#p-tail').value, months: $('#p-months').value, period: $('#p-period').value,
-    minSectorChg: $('#p-sec').value, minAngle: $('#p-ang').value, topN: $('#p-top').value
+    minSectorChg: $('#p-sec').value, minAngle: $('#p-ang').value, topN: $('#p-top').value,
+    spread: $('#p-spread').value
   });
   $('#run').disabled = true;
   document.querySelectorAll('main .card').forEach(c => c.classList.add('loading'));
@@ -373,8 +378,15 @@ function qbadge(q) { return `<span class="badge q-${q}"><span class="dot bg-${q}
 
 function render() {
   const d = DATA;
-  $('#picksHint').textContent =
-    `${d.candidateCount} of ${d.universeSize} members across ${d.qualifyingSectors.length} qualifying sectors point up-and-right. Data as of ${d.asOf}.`;
+  const spreadOn = d.params.spread !== false;
+  const inPicks = {};
+  d.picks.forEach(p => inPicks[p.sectorEtf] = (inPicks[p.sectorEtf] || 0) + 1);
+  const cov = d.qualifyingSectors.map(s =>
+    `${s} ${inPicks[s] || 0}/${(d.candidatesBySector || {})[s] ?? '?'}`).join(' · ');
+  $('#picksHint').innerHTML =
+    `${d.candidateCount} of ${d.universeSize} members across ${d.qualifyingSectors.length} qualifying sectors point up-and-right. ` +
+    `${spreadOn ? 'One slot per sector before any sector takes a second' : 'Ranked purely by score, so one sector can take every slot'}. ` +
+    `Data as of ${d.asOf}.<br><span style="color:var(--muted)">Picks / candidates per sector — ${cov}</span>`;
 
   // picks cards
   $('#picks').innerHTML = d.picks.length ? d.picks.map((p, i) => `
