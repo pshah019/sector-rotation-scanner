@@ -93,6 +93,23 @@
   .pill.on{color:var(--good)} .pill.off{color:var(--muted)}
   .connect{display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 0}
   .connect p{margin:0;color:var(--muted);font-size:13px;text-align:center;max-width:440px}
+  .tabs{display:flex;gap:3px;background:var(--plane);border:1px solid var(--hair);
+    border-radius:9px;padding:3px}
+  .tab{background:transparent;border:none;border-radius:7px;padding:6px 14px;font-size:13px;
+    color:var(--muted);font-weight:600}
+  .tab[aria-selected="true"]{background:var(--raised);color:var(--ink);
+    box-shadow:0 1px 3px rgba(0,0,0,.25)}
+  .view[hidden]{display:none}
+  textarea{font:inherit;color:var(--ink);background:var(--plane);border:1px solid var(--hair);
+    border-radius:8px;padding:9px 11px;width:100%;min-height:130px;resize:vertical;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.6}
+  .listbar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .listbar select{font:inherit;color:var(--ink);background:var(--plane);border:1px solid var(--hair);
+    border-radius:7px;padding:7px 10px;min-width:220px}
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:5px;
+    background:var(--raised);border:1px solid var(--hair);color:var(--ink-2);margin:2px 3px 0 0;
+    font-variant-numeric:tabular-nums}
+  dialog.wide{max-width:620px}
   .spin{width:12px;height:12px;border:2px solid var(--muted);border-top-color:transparent;
     border-radius:50%;animation:sp .7s linear infinite;display:none}
   .spin.on{display:block}
@@ -115,7 +132,11 @@
 <header>
   <div>
     <h1>Sector Rotation Scanner</h1>
-    <div class="sub">StockCharts RRG · JdK RS-Ratio / RS-Momentum · benchmark SPY, members vs their sector ETF</div>
+    <div class="sub" id="subline">StockCharts RRG · JdK RS-Ratio / RS-Momentum · benchmark SPY, members vs their sector ETF</div>
+  </div>
+  <div class="tabs" role="tablist">
+    <button class="tab" id="tab-sector" role="tab" aria-selected="true">Sector scan</button>
+    <button class="tab" id="tab-list" role="tab" aria-selected="false">Ticker lists</button>
   </div>
   <div class="spacer"></div>
   <div class="status"><span class="spin" id="spin"></span><span id="status">Ready</span></div>
@@ -127,6 +148,8 @@
 </header>
 
 <main>
+
+<div class="view" id="sectorView">
 
   <section class="card">
     <h2>Scan parameters</h2>
@@ -199,9 +222,72 @@
     <div id="history"><div class="empty">Connect Supabase to store runs.</div></div>
   </section>
 
+</div><!-- /sectorView -->
+
+<div class="view" id="listView" hidden>
+
+  <section class="card">
+    <h2>Ticker list</h2>
+    <p class="hint">Run the same RRG maths on any list of tickers, benchmarked against whatever you choose. Lists are saved on the server, so they follow you to every device.</p>
+    <div class="listbar">
+      <div class="f">
+        <label for="listSelect">Saved lists</label>
+        <select id="listSelect"><option value="">— none —</option></select>
+      </div>
+      <button id="newList">+ New list</button>
+      <button id="editList">Edit</button>
+      <button class="danger" id="deleteList">Delete</button>
+      <div class="spacer"></div>
+      <div class="f"><label for="l-bench">Benchmark</label><input id="l-bench" type="text" value="SPY" style="width:90px"></div>
+      <div class="f"><label for="l-tail">Tail length</label><input id="l-tail" type="number" value="7" min="2" max="30" style="width:100px"></div>
+      <div class="f"><label for="l-months">Range (months)</label><input id="l-months" type="number" value="3" min="1" max="24" style="width:110px"></div>
+      <div class="f"><label for="l-period">Period</label><select id="l-period"><option value="d">Daily</option><option value="w">Weekly</option></select></div>
+    </div>
+    <div id="listSymbols" style="margin-top:12px"></div>
+  </section>
+
+  <section class="card">
+    <h2>Results</h2>
+    <p class="hint" id="listHint">Pick a saved list or create one, then press <b>Run scan</b>. ▲ marks a ticker whose latest RRG step points up and to the right.</p>
+    <div style="overflow-x:auto"><table id="listTable"><thead><tr>
+      <th class="l" data-k="symbol">Ticker</th><th class="l" data-k="name">Name</th>
+      <th class="l" data-k="quadrant">Quadrant</th><th data-k="ratio">RS-Ratio</th><th data-k="mom">RS-Mom</th>
+      <th data-k="angle">Angle</th><th data-k="magnitude">Step</th><th data-k="chg">Tail %</th>
+      <th data-k="price">Price</th><th data-k="score">Score</th>
+    </tr></thead><tbody><tr><td colspan="10" class="empty">No results yet.</td></tr></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2>Ticker RRG</h2>
+    <p class="hint" id="listChartHint">Each tail is the last 7 trading days. Filled arrows point up and to the right.</p>
+    <div id="listChart"><div class="empty">Run a list to plot it.</div></div>
+  </section>
+
+</div><!-- /listView -->
+
 </main>
 
 <div id="tip"></div>
+
+<dialog id="listDlg" class="wide">
+  <h3 style="margin:0 0 4px;font-size:15px" id="listDlgTitle">New ticker list</h3>
+  <p style="color:var(--muted);font-size:12px;margin:0 0 14px">
+    Saving a list with an existing name overwrites it. Separate tickers with commas, spaces or new lines — case and <code>$</code> prefixes don't matter.</p>
+  <label style="font-size:11px;color:var(--muted)">List name</label>
+  <input id="listName" placeholder="e.g. Bishop watchlist" style="margin-bottom:10px">
+  <label style="font-size:11px;color:var(--muted)">Benchmark</label>
+  <input id="listBench" placeholder="SPY" value="SPY" style="margin-bottom:10px">
+  <label style="font-size:11px;color:var(--muted)">Tickers</label>
+  <textarea id="listTickers" placeholder="AAPL MSFT NVDA
+AMZN, GOOGL, META
+$TSLA"></textarea>
+  <div id="listCount" style="color:var(--muted);font-size:12px;margin:6px 0 0"></div>
+  <div id="listDlgMsg" style="color:var(--bad);font-size:12px;min-height:16px;margin-bottom:6px"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end">
+    <button id="listDlgClose">Cancel</button>
+    <button class="primary" id="listDlgSave">Save list</button>
+  </div>
+</dialog>
 
 <dialog id="dlg">
   <h3 style="margin:0 0 4px;font-size:15px">Where runs are stored</h3>
@@ -275,8 +361,186 @@ function refreshPill() {
 function setStatus(t, busy) { $('#status').textContent = t; $('#spin').classList.toggle('on', !!busy); }
 
 
+/* ---------- tabs ---------- */
+let TAB = 'sector';
+function setTab(t) {
+  TAB = t;
+  $('#tab-sector').setAttribute('aria-selected', String(t === 'sector'));
+  $('#tab-list').setAttribute('aria-selected', String(t === 'list'));
+  $('#sectorView').hidden = t !== 'sector';
+  $('#listView').hidden = t !== 'list';
+  // Clear-week belongs to the sector history, not to list scans.
+  $('#clearWeek').style.display = t === 'sector' ? '' : 'none';
+  $('#subline').textContent = t === 'sector'
+    ? 'StockCharts RRG · JdK RS-Ratio / RS-Momentum · benchmark SPY, members vs their sector ETF'
+    : 'StockCharts RRG · your own ticker list against any benchmark';
+  if (t === 'list' && LISTS === null) loadLists();
+}
+$('#tab-sector').onclick = () => setTab('sector');
+$('#tab-list').onclick = () => setTab('list');
+
+/* ---------- saved ticker lists ---------- */
+let LISTS = null;        // null until first load
+let LIST_DATA = null;    // last custom scan result
+let LIST_SORT = { k: 'score', dir: -1 };
+
+const parseTickers = (raw) => {
+  const seen = new Set(), out = [];
+  for (let t of String(raw || '').split(/[\s,;]+/)) {
+    t = t.trim().toUpperCase().replace(/^\$/, '');
+    if (t && /^[A-Z][A-Z0-9.\-/]{0,9}$/.test(t) && !seen.has(t)) { seen.add(t); out.push(t); }
+  }
+  return out;
+};
+
+async function loadLists(selectName) {
+  try {
+    const r = await fetch('/api/lists');
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'lists ' + r.status);
+    if (!j.configured) {
+      $('#listSymbols').innerHTML = '<div class="empty">Server storage isn\'t configured, so lists can\'t be saved yet.</div>';
+      return;
+    }
+    LISTS = j.lists || [];
+    const sel = $('#listSelect');
+    const keep = selectName || sel.value;
+    sel.innerHTML = '<option value="">— none —</option>' +
+      LISTS.map(l => `<option value="${l.name.replace(/"/g,'&quot;')}">${l.name} (${(l.symbols||[]).length})</option>`).join('');
+    if (keep && LISTS.some(l => l.name === keep)) sel.value = keep;
+    showSelectedList();
+  } catch (e) {
+    $('#listSymbols').innerHTML = `<div class="empty">Couldn't load lists: ${e.message}</div>`;
+  }
+}
+
+const currentList = () => (LISTS || []).find(l => l.name === $('#listSelect').value) || null;
+
+function showSelectedList() {
+  const l = currentList();
+  const box = $('#listSymbols');
+  if (!l) { box.innerHTML = '<div class="empty">No list selected. Create one with <b>+ New list</b>.</div>'; return; }
+  $('#l-bench').value = l.benchmark || 'SPY';
+  box.innerHTML = `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">${(l.symbols||[]).length} tickers · benchmark ${l.benchmark || 'SPY'}</div>` +
+    (l.symbols || []).map(s => `<span class="tag">${s}</span>`).join('');
+}
+$('#listSelect').onchange = showSelectedList;
+
+function openListDlg(existing) {
+  $('#listDlgTitle').textContent = existing ? 'Edit ticker list' : 'New ticker list';
+  $('#listName').value = existing ? existing.name : '';
+  $('#listBench').value = existing ? (existing.benchmark || 'SPY') : 'SPY';
+  $('#listTickers').value = existing ? (existing.symbols || []).join(' ') : '';
+  $('#listDlgMsg').textContent = '';
+  updateCount();
+  $('#listDlg').showModal();
+  $(existing ? '#listTickers' : '#listName').focus();
+}
+function updateCount() {
+  const n = parseTickers($('#listTickers').value).length;
+  $('#listCount').textContent = n ? `${n} valid ticker${n === 1 ? '' : 's'} recognised` : '';
+}
+$('#listTickers').oninput = updateCount;
+$('#newList').onclick = () => openListDlg(null);
+$('#editList').onclick = () => {
+  const l = currentList();
+  if (!l) return setStatus('Select a list to edit');
+  openListDlg(l);
+};
+$('#listDlgClose').onclick = () => $('#listDlg').close();
+
+$('#listDlgSave').onclick = async () => {
+  const name = $('#listName').value.trim();
+  const symbols = parseTickers($('#listTickers').value);
+  const benchmark = parseTickers($('#listBench').value)[0] || 'SPY';
+  if (!name) return void ($('#listDlgMsg').textContent = 'Give the list a name.');
+  if (!symbols.length) return void ($('#listDlgMsg').textContent = 'Add at least one valid ticker.');
+  $('#listDlgSave').disabled = true;
+  $('#listDlgMsg').textContent = 'Saving…';
+  try {
+    const r = await fetch('/api/lists', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, symbols, benchmark })
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'save ' + r.status);
+    $('#listDlg').close();
+    setStatus(`Saved "${name}" · ${symbols.length} tickers`);
+    await loadLists(name);
+  } catch (e) {
+    $('#listDlgMsg').textContent = 'Could not save: ' + e.message;
+  } finally { $('#listDlgSave').disabled = false; }
+};
+
+$('#deleteList').onclick = async () => {
+  const l = currentList();
+  if (!l) return setStatus('Select a list to delete');
+  if (!confirm(`Delete the list "${l.name}"? This cannot be undone.`)) return;
+  try {
+    const r = await fetch('/api/lists?name=' + encodeURIComponent(l.name), { method: 'DELETE' });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'delete ' + r.status);
+    setStatus(`Deleted "${l.name}"`);
+    $('#listSelect').value = '';
+    await loadLists();
+  } catch (e) { setStatus('Delete failed: ' + e.message); }
+};
+
+async function runList() {
+  const l = currentList();
+  if (!l) { setStatus('Pick a saved list first, or create one'); return; }
+  const qs = new URLSearchParams({
+    symbols: (l.symbols || []).join(','),
+    benchmark: $('#l-bench').value.trim() || l.benchmark || 'SPY',
+    tail: $('#l-tail').value, months: $('#l-months').value, period: $('#l-period').value
+  });
+  $('#run').disabled = true;
+  setStatus(`Scanning "${l.name}"…`, true);
+  try {
+    const r = await fetch('/api/scan?' + qs.toString());
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'scan failed');
+    LIST_DATA = j;
+    renderList();
+    setStatus(`Done · ${j.upAndRightCount} of ${j.resolved} point up-and-right · ${(j.elapsedMs/1000).toFixed(1)}s`);
+  } catch (e) {
+    setStatus('Failed: ' + e.message);
+  } finally { $('#run').disabled = false; }
+}
+
+function renderList() {
+  const d = LIST_DATA;
+  const miss = d.missing && d.missing.length
+    ? ` <span style="color:var(--bad)">No data for ${d.missing.join(', ')}.</span>` : '';
+  $('#listHint').innerHTML =
+    `${d.upAndRightCount} of ${d.resolved} tickers point up and to the right, benchmarked against <b>${d.benchmark}</b>. ` +
+    `Data as of ${d.asOf}.${miss}`;
+  $('#listChartHint').textContent =
+    `Each tail is the last ${d.params.tail} trading days vs ${d.benchmark}. Solid arrows point up and to the right.`;
+
+  const rows = [...d.rows].sort((a, b) => {
+    const k = LIST_SORT.k, x = a[k], y = b[k];
+    return (typeof x === 'string' ? String(x).localeCompare(String(y)) : x - y) * LIST_SORT.dir;
+  });
+  $('#listTable tbody').innerHTML = rows.length ? rows.map(c => `<tr>
+    <td class="l sym">${c.upAndRight ? '▲ ' : ''}${c.symbol}</td><td class="l">${c.name || ''}</td>
+    <td class="l">${qbadge(c.quadrant)}</td>
+    <td>${c.ratio.toFixed(2)}</td><td>${c.mom.toFixed(2)}</td><td>${c.angle.toFixed(0)}°</td>
+    <td>${c.magnitude.toFixed(2)}</td><td>${pct(c.chg)}</td><td>${c.price.toFixed(2)}</td>
+    <td><b>${c.score.toFixed(1)}</b></td></tr>`).join('')
+    : '<tr><td colspan="10" class="empty">No tickers resolved.</td></tr>';
+
+  const up = d.rows.filter(r => r.upAndRight).map(r => r.symbol);
+  drawRRG('#listChart', d.rows, 'Ticker list vs ' + d.benchmark, up);
+}
+document.querySelectorAll('#listTable th').forEach(th => th.onclick = () => {
+  const k = th.dataset.k; if (!k || !LIST_DATA) return;
+  LIST_SORT = { k, dir: LIST_SORT.k === k ? -LIST_SORT.dir : -1 };
+  renderList();
+});
+
 /* ---------- run ---------- */
-$('#run').onclick = run;
+$('#run').onclick = () => (TAB === 'list' ? runList() : run());
 async function run() {
   const qs = new URLSearchParams({
     tail: $('#p-tail').value, months: $('#p-months').value, period: $('#p-period').value,
