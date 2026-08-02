@@ -87,7 +87,7 @@ async function loadGroups() {
 // ---------------------------------------------------------------------------
 // RRG series fetch + per-symbol metric derivation
 // ---------------------------------------------------------------------------
-async function fetchRRG(symbols, benchmark, months, period) {
+export async function fetchRRG(symbols, benchmark, months, period) {
   const url =
     `${RRG_BASE}?cmd=getrrgdata2&auth=1&f=json` +
     `&s=${encodeURIComponent(symbols.join(','))}` +
