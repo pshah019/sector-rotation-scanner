@@ -705,8 +705,8 @@ document.querySelectorAll('#candTable th').forEach(th => th.onclick = () => {
 /* ---------- RRG scatter ---------- */
 function drawRRG(sel, rows, title, highlight) {
   const host = $(sel);
-  const W = 640, H = 470, M = { t: 16, r: 16, b: 40, l: 46 };
-  const pw = W - M.l - M.r, ph = H - M.t - M.b;
+  const W = 640, M = { t: 16, r: 16, b: 40, l: 46 };
+  const pw = W - M.l - M.r;
   const hi = new Set(highlight || []);
 
   const xs = [], ys = [];
@@ -714,7 +714,20 @@ function drawRRG(sel, rows, title, highlight) {
   if (!xs.length) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
   const pad = (a) => { const lo = Math.min(...a, 100), hi2 = Math.max(...a, 100);
     const s = Math.max((hi2 - lo) * 0.10, 0.35); return [lo - s, hi2 + s]; };
-  const [x0, x1] = pad(xs), [y0, y1] = pad(ys);
+  let [x0, x1] = pad(xs), [y0, y1] = pad(ys);
+
+  // Square grid. Fitting each axis to its own range independently stretches one
+  // of them, so a 45 degree rotation vector can draw at 61 degrees and the
+  // picture contradicts the angle column. Here both axes carry identical
+  // units-per-pixel: the plot height flexes to the data's shape, the coarser
+  // axis sets the scale, and the other domain is widened about its centre so
+  // nothing is ever cropped.
+  const ph = Math.min(620, Math.max(220, Math.round(pw * (y1 - y0) / (x1 - x0))));
+  const unit = Math.max((x1 - x0) / pw, (y1 - y0) / ph);
+  const grow = (lo, hiV, want) => { const c = (lo + hiV) / 2, h = want / 2; return [c - h, c + h]; };
+  [x0, x1] = grow(x0, x1, unit * pw);
+  [y0, y1] = grow(y0, y1, unit * ph);
+  const H = ph + M.t + M.b;
   const X = v => M.l + (v - x0) / (x1 - x0) * pw;
   const Y = v => M.t + ph - (v - y0) / (y1 - y0) * ph;
   const cx = X(100), cy = Y(100);
