@@ -243,9 +243,11 @@ $('#theme').onclick = () => {
    laptop, or a brand-new browser all see the same history with zero setup. */
 let STORAGE_OK = null; // null = unknown until the first call
 
+let HIST_WEEK = null; // the week actually being shown, so Clear targets it
+
 const Store = {
   async week(ws) {
-    const r = await fetch('/api/runs?week=' + encodeURIComponent(ws));
+    const r = await fetch('/api/runs' + (ws ? '?week=' + encodeURIComponent(ws) : ''));
     const j = await r.json();
     if (!r.ok || j.ok === false) throw new Error(j.error || 'history ' + r.status);
     STORAGE_OK = j.configured; refreshPill();
@@ -272,12 +274,6 @@ function refreshPill() {
 
 function setStatus(t, busy) { $('#status').textContent = t; $('#spin').classList.toggle('on', !!busy); }
 
-/* ---------- week helper (mirrors the server) ---------- */
-function weekStartOf(iso) {
-  const d = new Date(iso + 'T00:00:00Z');
-  d.setUTCDate(d.getUTCDate() - d.getUTCDay());
-  return d.toISOString().slice(0, 10);
-}
 
 /* ---------- run ---------- */
 $('#run').onclick = run;
@@ -313,7 +309,9 @@ async function run() {
 
 /* ---------- clear week ---------- */
 $('#clearWeek').onclick = async () => {
-  const ws = DATA ? DATA.weekStart : weekStartOf(new Date().toISOString().slice(0, 10));
+  // Always clear the week actually on screen, never a guessed calendar week.
+  const ws = (DATA && DATA.weekStart) || HIST_WEEK;
+  if (!ws) return setStatus('Nothing stored to clear');
   if (!confirm(`Delete every stored run for the week starting ${ws}? This cannot be undone.`)) return;
   try {
     const j = await Store.clear(ws);
@@ -325,10 +323,15 @@ $('#clearWeek').onclick = async () => {
 /* ---------- history ---------- */
 async function loadHistory() {
   const el = $('#history');
-  const ws = DATA ? DATA.weekStart : weekStartOf(new Date().toISOString().slice(0, 10));
-  $('#histHint').textContent = `Runs stored for the week starting ${ws}. Shared across every device.`;
+  // Before a scan we don't know which week the data belongs to, so ask the
+  // server for the latest stored week rather than assuming today's.
+  const ws = DATA ? DATA.weekStart : null;
   try {
     const j = await Store.week(ws);
+    HIST_WEEK = j.week || ws;
+    $('#histHint').textContent = HIST_WEEK
+      ? `Runs stored for the week starting ${HIST_WEEK}. Shared across every device.`
+      : 'Shared across every device.';
     if (!j.configured) {
       el.innerHTML = '<div class="connect"><p>Storage isn\'t configured on the server yet, so runs aren\'t being kept. ' +
         'Add <b>SUPABASE_ANON_KEY</b> to the Vercel project\'s environment variables and redeploy — after that every device works with no setup.</p>' +
