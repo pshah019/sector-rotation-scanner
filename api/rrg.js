@@ -3,6 +3,8 @@
 // freecharts RRG app calls), so JdK RS-Ratio / RS-Momentum values match the
 // site exactly rather than being re-derived.
 
+import { insertRun, storageReady } from './runs.js';
+
 const RRG_BASE = 'https://stockcharts.com/d-rrg/rrg';
 const RRG_PAGE = 'https://stockcharts.com/freecharts/rrg/';
 const BUNDLE_HOST = 'https://d.stockcharts.com/freecharts/rrg/';
@@ -337,12 +339,42 @@ export default async function handler(req, res) {
     const asOfDate = (sectors.asOf || '').slice(0, 10);
     const { weekStart, weekEnd } = weekBounds(asOfDate || new Date().toISOString().slice(0, 10));
 
+    // Persist here rather than from the browser, so every device that can open
+    // the site writes to the same history without holding a credential.
+    let saved = false;
+    let saveError = null;
+    if (q.save !== '0' && storageReady()) {
+      try {
+        await insertRun({
+          week_start: weekStart,
+          week_end: weekEnd,
+          as_of: asOfDate,
+          params: { tail, months, period, minSectorChg, minAngle, topN, spread },
+          sectors: sectors.rows.map((s) => ({
+            symbol: s.symbol, name: s.name, ratio: s.ratio, mom: s.mom,
+            chg: s.chg, quadrant: s.quadrant, angle: s.angle,
+          })),
+          picks: picks.map((p) => ({
+            symbol: p.symbol, name: p.name, sector: p.sectorEtf, quadrant: p.quadrant,
+            ratio: p.ratio, mom: p.mom, angle: p.angle, chg: p.chg,
+            price: p.price, score: p.score,
+          })),
+        });
+        saved = true;
+      } catch (e) {
+        saveError = String(e.message || e);
+      }
+    }
+
     res.status(200).json({
       ok: true,
       asOf: sectors.asOf,
       asOfDate,
       weekStart,
       weekEnd,
+      storageConfigured: storageReady(),
+      saved,
+      saveError,
       generatedAt: new Date().toISOString(),
       elapsedMs: Date.now() - t0,
       params: { tail, months, period, minSectorChg, minAngle, maxAngle, minMemberChg, topN, spread },
