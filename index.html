@@ -204,16 +204,21 @@
 <div id="tip"></div>
 
 <dialog id="dlg">
-  <h3 style="margin:0 0 4px;font-size:15px">Supabase connection</h3>
+  <h3 style="margin:0 0 4px;font-size:15px">Where runs are stored</h3>
+  <p style="color:var(--ink-2);font-size:13px;margin:0 0 12px;line-height:1.55">
+    History lives in Supabase and is read through this site's own <code>/api/runs</code> endpoint.
+    No key is kept in your browser, so a phone, a second laptop, or a fresh browser
+    all show the same history with nothing to set up.</p>
+  <p style="color:var(--muted);font-size:12px;margin:0 0 6px"><b>One-time server setup</b></p>
+  <ol style="color:var(--ink-2);font-size:12.5px;margin:0 0 12px;padding-left:18px;line-height:1.7">
+    <li>Vercel → this project → <b>Settings → Environment Variables</b></li>
+    <li>Add <code>SUPABASE_ANON_KEY</code> = your project's anon public key</li>
+    <li>Save, then <b>Redeploy</b> the latest deployment</li>
+  </ol>
   <p style="color:var(--muted);font-size:12px;margin:0 0 14px">
-    Stored in this browser only (localStorage). Use the project's <b>anon</b> public key — never the service role key.</p>
-  <label style="font-size:11px;color:var(--muted)">Project URL</label>
-  <input id="sbUrl" placeholder="https://xxxx.supabase.co">
-  <label style="font-size:11px;color:var(--muted)">Anon key</label>
-  <input id="sbKey" type="password" placeholder="eyJ...">
-  <div id="dlgMsg" style="color:var(--bad);font-size:12px;min-height:16px;margin-bottom:6px"></div>
+    <code>SUPABASE_URL</code> is optional — it defaults to your project. Use the <b>anon</b> key, never the service role key.</p>
   <div style="display:flex;gap:8px;justify-content:flex-end">
-    <button id="dlgClose">Cancel</button><button class="primary" id="dlgSave">Save &amp; test</button>
+    <button class="primary" id="dlgClose">Got it</button>
   </div>
 </dialog>
 
@@ -232,61 +237,37 @@ $('#theme').onclick = () => {
   if (DATA) render();
 };
 
-/* ---------- supabase ---------- */
-// Project URL is not a secret, so it ships pre-filled — the only thing that
-// ever needs pasting is the anon key, and it stays in this browser.
-const SB_DEFAULT_URL = 'https://ihlggfdwbhgechoqvrri.supabase.co';
-const SB = {
-  url: () => localStorage.getItem('rrg.sbUrl') || SB_DEFAULT_URL,
-  key: () => localStorage.getItem('rrg.sbKey') || '',
-  on:  () => !!(SB.url() && SB.key()),
-  hdr: () => ({ apikey: SB.key(), Authorization: 'Bearer ' + SB.key(), 'Content-Type': 'application/json' }),
-  async insert(row) {
-    const r = await fetch(SB.url() + '/rest/v1/rrg_runs', {
-      method: 'POST', headers: { ...SB.hdr(), Prefer: 'return=minimal' }, body: JSON.stringify(row) });
-    if (!r.ok) throw new Error('Supabase insert ' + r.status + ': ' + (await r.text()).slice(0, 200));
-  },
+/* ---------- storage ----------
+   The browser holds no credential. Everything goes through /api/runs, which
+   reads the key from a server environment variable — so a phone, a second
+   laptop, or a brand-new browser all see the same history with zero setup. */
+let STORAGE_OK = null; // null = unknown until the first call
+
+const Store = {
   async week(ws) {
-    const r = await fetch(SB.url() + '/rest/v1/rrg_runs?week_start=eq.' + ws +
-      '&select=id,run_at,as_of,params,picks&order=run_at.desc', { headers: SB.hdr() });
-    if (!r.ok) throw new Error('Supabase read ' + r.status);
-    return r.json();
+    const r = await fetch('/api/runs?week=' + encodeURIComponent(ws));
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.error || 'history ' + r.status);
+    STORAGE_OK = j.configured; refreshPill();
+    return j;
   },
   async clear(ws) {
-    const r = await fetch(SB.url() + '/rest/v1/rrg_runs?week_start=eq.' + ws,
-      { method: 'DELETE', headers: SB.hdr() });
-    if (!r.ok) throw new Error('Supabase delete ' + r.status);
+    const r = await fetch('/api/runs?week=' + encodeURIComponent(ws), { method: 'DELETE' });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.error || 'clear ' + r.status);
+    return j;
   }
 };
-function openSettings() { $('#sbUrl').value = SB.url(); $('#sbKey').value = SB.key(); $('#dlg').showModal(); $('#sbKey').focus(); }
-$('#settings').onclick = openSettings;
+
+$('#settings').onclick = () => $('#dlg').showModal();
 $('#dlgClose').onclick = () => $('#dlg').close();
-$('#dlgSave').onclick = async () => {
-  const url = ($('#sbUrl').value.trim() || SB_DEFAULT_URL).replace(/\/$/, '');
-  const key = $('#sbKey').value.trim();
-  $('#dlgSave').disabled = true;
-  $('#dlgMsg').textContent = 'Testing connection…';
-  try {
-    // Prove the key actually reaches the table before storing it, so a bad
-    // paste fails here instead of silently swallowing every future run.
-    const r = await fetch(url + '/rest/v1/rrg_runs?select=id&limit=1',
-      { headers: { apikey: key, Authorization: 'Bearer ' + key } });
-    if (!r.ok) throw new Error(`${r.status} — ${(await r.text()).slice(0, 120)}`);
-    localStorage.setItem('rrg.sbUrl', url);
-    localStorage.setItem('rrg.sbKey', key);
-    $('#dlgMsg').textContent = '';
-    $('#dlg').close();
-    setStatus('Supabase connected — runs will be saved');
-    refreshPill(); loadHistory();
-  } catch (e) {
-    $('#dlgMsg').textContent = 'Could not connect: ' + e.message;
-  } finally { $('#dlgSave').disabled = false; }
-};
 
 function refreshPill() {
-  const el = $('#sbPill'), on = SB.on();
+  const el = $('#sbPill');
+  const on = STORAGE_OK === true;
   el.className = 'pill ' + (on ? 'on' : 'off');
-  el.lastChild.textContent = on ? 'Supabase connected' : 'Supabase not connected';
+  el.lastChild.textContent =
+    STORAGE_OK === null ? 'Storage —' : on ? 'Storage on · all devices' : 'Storage not configured';
 }
 
 function setStatus(t, busy) { $('#status').textContent = t; $('#spin').classList.toggle('on', !!busy); }
@@ -316,22 +297,12 @@ async function run() {
     DATA = j;
     ACTIVE_SECTOR = (j.qualifyingSectors && j.qualifyingSectors[0]) || null;
     render();
-    setStatus(`Done · ${j.candidateCount} candidates from ${j.universeSize} names · ${(j.elapsedMs/1000).toFixed(1)}s`);
-    if (SB.on()) {
-      try {
-        await SB.insert({
-          week_start: j.weekStart, week_end: j.weekEnd, as_of: j.asOfDate,
-          params: j.params,
-          sectors: j.sectors.map(s => ({ symbol:s.symbol, name:s.name, ratio:s.ratio, mom:s.mom,
-                                         chg:s.chg, quadrant:s.quadrant, angle:s.angle })),
-          picks: j.picks.map(p => ({ symbol:p.symbol, name:p.name, sector:p.sectorEtf, quadrant:p.quadrant,
-                                     ratio:p.ratio, mom:p.mom, angle:p.angle, chg:p.chg,
-                                     price:p.price, score:p.score }))
-        });
-        setStatus(`Done · saved to Supabase · ${j.candidateCount} candidates`);
-        loadHistory();
-      } catch (e) { setStatus('Scan OK, Supabase save failed: ' + e.message); }
-    }
+    // The scan endpoint persists the run itself, so this is just reporting.
+    STORAGE_OK = j.storageConfigured; refreshPill();
+    if (j.saved) setStatus(`Done · saved · ${j.candidateCount} candidates from ${j.universeSize} names`);
+    else if (j.saveError) setStatus('Scan OK, save failed: ' + j.saveError);
+    else setStatus(`Done · not saved (storage off) · ${j.candidateCount} candidates`);
+    loadHistory();
   } catch (e) {
     setStatus('Failed: ' + e.message);
   } finally {
@@ -342,26 +313,30 @@ async function run() {
 
 /* ---------- clear week ---------- */
 $('#clearWeek').onclick = async () => {
-  if (!SB.on()) return setStatus('Connect Supabase first');
   const ws = DATA ? DATA.weekStart : weekStartOf(new Date().toISOString().slice(0, 10));
   if (!confirm(`Delete every stored run for the week starting ${ws}? This cannot be undone.`)) return;
-  try { await SB.clear(ws); setStatus('Cleared week ' + ws); loadHistory(); }
-  catch (e) { setStatus('Clear failed: ' + e.message); }
+  try {
+    const j = await Store.clear(ws);
+    setStatus(`Cleared week ${ws} · ${j.deleted} run${j.deleted === 1 ? '' : 's'} removed`);
+    loadHistory();
+  } catch (e) { setStatus('Clear failed: ' + e.message); }
 };
 
 /* ---------- history ---------- */
 async function loadHistory() {
   const el = $('#history');
-  if (!SB.on()) {
-    el.innerHTML = '<div class="connect"><p>Runs aren\'t being saved yet. Paste your Supabase <b>anon</b> key to store every scan for the week — the key stays in this browser and never leaves it.</p>' +
-      '<button class="primary" id="connectBtn">Connect Supabase</button></div>';
-    $('#connectBtn').onclick = openSettings;
-    return;
-  }
   const ws = DATA ? DATA.weekStart : weekStartOf(new Date().toISOString().slice(0, 10));
-  $('#histHint').textContent = `Runs stored for the week starting ${ws}.`;
+  $('#histHint').textContent = `Runs stored for the week starting ${ws}. Shared across every device.`;
   try {
-    const rows = await SB.week(ws);
+    const j = await Store.week(ws);
+    if (!j.configured) {
+      el.innerHTML = '<div class="connect"><p>Storage isn\'t configured on the server yet, so runs aren\'t being kept. ' +
+        'Add <b>SUPABASE_ANON_KEY</b> to the Vercel project\'s environment variables and redeploy — after that every device works with no setup.</p>' +
+        '<button id="howBtn">How to do it</button></div>';
+      $('#howBtn').onclick = () => $('#dlg').showModal();
+      return;
+    }
+    const rows = j.rows;
     if (!rows.length) { el.innerHTML = '<div class="empty">No runs stored for this week yet.</div>'; return; }
     el.innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th class="l">Run</th><th class="l">As of</th>' +
       '<th>Tail</th><th class="l">Picks</th></tr></thead><tbody>' +
