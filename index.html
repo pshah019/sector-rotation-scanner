@@ -132,7 +132,7 @@
 <header>
   <div>
     <h1>Sector Rotation Scanner</h1>
-    <div class="sub" id="subline">StockCharts RRG · JdK RS-Ratio / RS-Momentum · benchmark SPY, members vs their sector ETF</div>
+    <div class="sub" id="subline">Relative Rotation · JdK RS-Ratio / RS-Momentum · benchmark SPY, members vs their sector ETF</div>
   </div>
   <div class="tabs" role="tablist">
     <button class="tab" id="tab-sector" role="tab" aria-selected="true">Sector scan</button>
@@ -153,7 +153,7 @@
 
   <section class="card">
     <h2>Scan parameters</h2>
-    <p class="hint">Defaults reproduce the StockCharts view: daily, 3-month range, 7-bar tail. %CHG is the price change across the tail, which is what the StockCharts table column measures.</p>
+    <p class="hint">Defaults: daily, 3-month range, 7-bar tail. Tail % is the price change across the visible tail, not a one-day move.</p>
     <div class="filters">
       <div class="f"><label for="p-tail">Tail length</label><input id="p-tail" type="number" value="7" min="2" max="30"></div>
       <div class="f"><label for="p-months">Range (months)</label><input id="p-months" type="number" value="3" min="1" max="24"></div>
@@ -171,7 +171,7 @@
   <section class="card">
     <h2>Top picks</h2>
     <p class="hint" id="picksHint">Members of qualifying sectors whose latest RRG step points up and to the right, ranked by rotation quality.</p>
-    <div class="picks" id="picks"><div class="empty">Press <b>Run scan</b> to pull the current StockCharts RRG.</div></div>
+    <div class="picks" id="picks"><div class="empty">Press <b>Run scan</b> to pull the latest rotation data.</div></div>
   </section>
 
   <section class="card">
@@ -372,8 +372,8 @@ function setTab(t) {
   // Clear-week belongs to the sector history, not to list scans.
   $('#clearWeek').style.display = t === 'sector' ? '' : 'none';
   $('#subline').textContent = t === 'sector'
-    ? 'StockCharts RRG · JdK RS-Ratio / RS-Momentum · benchmark SPY, members vs their sector ETF'
-    : 'StockCharts RRG · your own ticker list against any benchmark';
+    ? 'Relative Rotation · JdK RS-Ratio / RS-Momentum · benchmark SPY, members vs their sector ETF'
+    : 'Relative Rotation · your own ticker list against any benchmark';
   if (t === 'list' && LISTS === null) loadLists();
 }
 $('#tab-sector').onclick = () => setTab('sector');
@@ -549,7 +549,7 @@ async function run() {
   });
   $('#run').disabled = true;
   document.querySelectorAll('main .card').forEach(c => c.classList.add('loading'));
-  setStatus('Pulling StockCharts RRG…', true);
+  setStatus('Pulling rotation data…', true);
   try {
     const r = await fetch('/api/rrg?' + qs.toString());
     const j = await r.json();
