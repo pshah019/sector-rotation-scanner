@@ -4,7 +4,8 @@
 // scanner — just an arbitrary symbol list against a benchmark of the user's
 // choosing, with no sector layer.
 
-import { fetchRRG, deriveMetrics, angleQuality, percentile } from './rrg.js';
+import { fetchRRG, deriveMetrics, angleQuality, percentile, trimToDays } from './rrg.js';
+import { resolveWindow } from './options.js';
 
 const QUAD_WEIGHT = { Improving: 1.3, Lagging: 1.2, Leading: 1.0, Weakening: 0.9 };
 const MAX_QUAD_WEIGHT = 1.3;
@@ -63,8 +64,7 @@ export default async function handler(req, res) {
   const symbols = parseSymbols(q.symbols);
   const benchmark = parseSymbols(q.benchmark)[0] || 'SPY';
   const tail = Math.max(2, Math.min(30, parseInt(q.tail, 10) || 7));
-  const months = Math.max(1, Math.min(24, parseInt(q.months, 10) || 3));
-  const period = ['d', 'w'].includes(q.period) ? q.period : 'd';
+  const win = resolveWindow(q.period, q.range, q.months);
   const minAngle = q.minAngle !== undefined ? parseFloat(q.minAngle) : 0;
 
   if (!symbols.length) {
@@ -76,7 +76,16 @@ export default async function handler(req, res) {
 
   const t0 = Date.now();
   try {
-    const payload = await fetchRRG(symbols, benchmark, months, period);
+    const payload = trimToDays(
+      await fetchRRG(symbols, benchmark, win.months, win.p),
+      win.trimDays
+    );
+    if (payload.rrgdata.length < tail + 1) {
+      return res.status(400).json({
+        ok: false,
+        error: `${win.label} only has ${payload.rrgdata.length} bars — too few for a ${tail}-bar tail. Pick a longer range or a shorter tail.`,
+      });
+    }
     const m = deriveMetrics(payload, symbols, tail);
 
     // Symbols StockCharts had no data for (typos, delistings) — surfaced so a
@@ -97,7 +106,7 @@ export default async function handler(req, res) {
       missing,
       upAndRightCount: scored.filter((r) => r.upAndRight).length,
       elapsedMs: Date.now() - t0,
-      params: { tail, months, period, minAngle, benchmark },
+      params: { tail, period: win.period, range: win.range, rangeLabel: win.label, minAngle, benchmark },
       rows: filtered,
     });
   } catch (err) {

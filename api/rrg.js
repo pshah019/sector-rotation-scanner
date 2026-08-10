@@ -4,6 +4,7 @@
 // site exactly rather than being re-derived.
 
 import { insertRun, storageReady } from './runs.js';
+import { resolveWindow } from './options.js';
 
 const RRG_BASE = 'https://stockcharts.com/d-rrg/rrg';
 const RRG_PAGE = 'https://stockcharts.com/freecharts/rrg/';
@@ -99,6 +100,20 @@ export async function fetchRRG(symbols, benchmark, months, period) {
   const json = JSON.parse(txt);
   if (!json.rrgdata || !json.rrgdata.length) throw new Error('Empty RRG payload');
   return json;
+}
+
+/**
+ * Keep only the last N calendar days of bars.
+ * The data service only understands whole months, so ranges shorter than that
+ * (1-10 days, 3 weeks) are fetched as a month and cut back here.
+ */
+export function trimToDays(payload, days) {
+  if (!days || !payload.rrgdata || !payload.rrgdata.length) return payload;
+  const rows = payload.rrgdata;
+  const last = new Date(rows[rows.length - 1].end.replace(' ', 'T')).getTime();
+  const cutoff = last - days * 86400000;
+  const kept = rows.filter((r) => new Date(r.end.replace(' ', 'T')).getTime() >= cutoff);
+  return { ...payload, rrgdata: kept.length >= 2 ? kept : rows.slice(-2) };
 }
 
 export function quadrantOf(ratio, mom) {
@@ -273,8 +288,8 @@ export default async function handler(req, res) {
 
   const q = req.query || {};
   const tail = Math.max(2, Math.min(30, parseInt(q.tail, 10) || 7));
-  const months = Math.max(1, Math.min(24, parseInt(q.months, 10) || 3));
-  const period = ['d', 'w'].includes(q.period) ? q.period : 'd';
+  const win = resolveWindow(q.period, q.range, q.months);
+  const { months, p: period } = win;
   const minSectorChg = q.minSectorChg !== undefined ? parseFloat(q.minSectorChg) : 0.5;
   const minAngle = q.minAngle !== undefined ? parseFloat(q.minAngle) : 15;
   const maxAngle = q.maxAngle !== undefined ? parseFloat(q.maxAngle) : 90;
@@ -288,7 +303,16 @@ export default async function handler(req, res) {
     const sectorGroup = groups.sp500 || SECTOR_FALLBACK;
 
     // --- Level 1: the 11 sector ETFs vs SPY ---------------------------------
-    const secPayload = await fetchRRG(sectorGroup.symbols, sectorGroup.benchmark, months, period);
+    const secPayload = trimToDays(
+      await fetchRRG(sectorGroup.symbols, sectorGroup.benchmark, months, period),
+      win.trimDays
+    );
+    if (secPayload.rrgdata.length < tail + 1) {
+      return res.status(400).json({
+        ok: false,
+        error: `${win.label} only has ${secPayload.rrgdata.length} bars — too few for a ${tail}-bar tail. Pick a longer range or a shorter tail.`,
+      });
+    }
     const sectors = deriveMetrics(secPayload, sectorGroup.symbols, tail);
     sectors.rows.forEach((s) => (s.name = SECTOR_NAMES[s.symbol] || s.name));
     sectors.rows.sort((a, b) => b.chg - a.chg);
@@ -304,7 +328,10 @@ export default async function handler(req, res) {
         const grp = groups[gk];
         if (!grp) return { sector: sec.symbol, error: `no member group ${gk}`, rows: [] };
         try {
-          const payload = await fetchRRG(grp.symbols, grp.benchmark || sec.symbol, months, period);
+          const payload = trimToDays(
+            await fetchRRG(grp.symbols, grp.benchmark || sec.symbol, months, period),
+            win.trimDays
+          );
           const m = deriveMetrics(payload, grp.symbols, tail);
           m.rows.forEach((r) => {
             r.sectorEtf = sec.symbol;
@@ -351,7 +378,7 @@ export default async function handler(req, res) {
           week_start: weekStart,
           week_end: weekEnd,
           as_of: asOfDate,
-          params: { tail, months, period, minSectorChg, minAngle, topN, spread },
+          params: { tail, period: win.period, range: win.range, minSectorChg, minAngle, topN, spread },
           sectors: sectors.rows.map((s) => ({
             symbol: s.symbol, name: s.name, ratio: s.ratio, mom: s.mom,
             chg: s.chg, quadrant: s.quadrant, angle: s.angle,
@@ -379,7 +406,7 @@ export default async function handler(req, res) {
       saveError,
       generatedAt: new Date().toISOString(),
       elapsedMs: Date.now() - t0,
-      params: { tail, months, period, minSectorChg, minAngle, maxAngle, minMemberChg, topN, spread },
+      params: { tail, period: win.period, range: win.range, rangeLabel: win.label, minSectorChg, minAngle, maxAngle, minMemberChg, topN, spread },
       sectors: sectors.rows,
       qualifyingSectors: qualifying.map((s) => s.symbol),
       candidatesBySector: bySector,
