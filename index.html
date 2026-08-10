@@ -104,7 +104,7 @@
     border-radius:8px;padding:9px 11px;width:100%;min-height:130px;resize:vertical;
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.6}
   .listbar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
-  .listbar select{font:inherit;color:var(--ink);background:var(--plane);border:1px solid var(--hair);
+  .listbar #listSelect{font:inherit;color:var(--ink);background:var(--plane);border:1px solid var(--hair);
     border-radius:7px;padding:7px 10px;min-width:220px}
   .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:5px;
     background:var(--raised);border:1px solid var(--hair);color:var(--ink-2);margin:2px 3px 0 0;
@@ -156,8 +156,8 @@
     <p class="hint">Defaults: daily, 3-month range, 7-bar tail. Tail % is the price change across the visible tail, not a one-day move.</p>
     <div class="filters">
       <div class="f"><label for="p-tail">Tail length</label><input id="p-tail" type="number" value="7" min="2" max="30"></div>
-      <div class="f"><label for="p-months">Range (months)</label><input id="p-months" type="number" value="3" min="1" max="24"></div>
-      <div class="f"><label for="p-period">Period</label><select id="p-period"><option value="d">Daily</option><option value="w">Weekly</option></select></div>
+      <div class="f"><label for="p-period">Period</label><select id="p-period" style="width:150px"></select></div>
+      <div class="f"><label for="p-range">Range</label><select id="p-range" style="width:130px"></select></div>
       <div class="f"><label for="p-sec">Min sector %</label><input id="p-sec" type="number" value="0.5" step="0.1"></div>
       <div class="f"><label for="p-ang">Min arrow angle</label><input id="p-ang" type="number" value="15" min="0" max="89"></div>
       <div class="f"><label for="p-top">Top N</label><input id="p-top" type="number" value="7" min="1" max="50"></div>
@@ -240,8 +240,8 @@
       <div class="spacer"></div>
       <div class="f"><label for="l-bench">Benchmark</label><input id="l-bench" type="text" value="SPY" style="width:90px"></div>
       <div class="f"><label for="l-tail">Tail length</label><input id="l-tail" type="number" value="7" min="2" max="30" style="width:100px"></div>
-      <div class="f"><label for="l-months">Range (months)</label><input id="l-months" type="number" value="3" min="1" max="24" style="width:110px"></div>
-      <div class="f"><label for="l-period">Period</label><select id="l-period"><option value="d">Daily</option><option value="w">Weekly</option></select></div>
+      <div class="f"><label for="l-period">Period</label><select id="l-period" style="width:150px"></select></div>
+      <div class="f"><label for="l-range">Range</label><select id="l-range" style="width:130px"></select></div>
     </div>
     <div id="listSymbols" style="margin-top:12px"></div>
   </section>
@@ -360,6 +360,40 @@ function refreshPill() {
 
 function setStatus(t, busy) { $('#status').textContent = t; $('#spin').classList.toggle('on', !!busy); }
 
+
+/* ---------- period / range ----------
+   Each period allows a different set of ranges (60 min offers 10 days to 3
+   months; daily offers 3 months to 10 years), so Range repopulates whenever
+   Period changes. The vocabulary comes from /api/options so the UI and the
+   server can't drift apart. */
+let OPTS = null;
+
+async function loadOptions() {
+  try {
+    OPTS = await fetch('/api/options').then(r => r.json());
+  } catch { return; }
+  for (const which of ['p', 'l']) {
+    const per = $(`#${which}-period`);
+    per.innerHTML = OPTS.periods.map(o =>
+      `<option value="${o.value}"${o.disabled ? ' disabled' : ''}>${o.label}</option>`).join('');
+    per.value = OPTS.defaults.period;
+    per.onchange = () => syncRange(which);
+    syncRange(which, OPTS.defaults.range);
+  }
+}
+
+function syncRange(which, prefer) {
+  if (!OPTS) return;
+  const per = $(`#${which}-period`).value;
+  const rng = $(`#${which}-range`);
+  const allowed = OPTS.periodRanges[per] || [];
+  const keep = prefer || rng.value;
+  rng.innerHTML = allowed.map(v =>
+    `<option value="${v}">${OPTS.ranges[v].label}</option>`).join('');
+  // Hold the previous choice when the new period still supports it, otherwise
+  // fall back to that period's own default (its first option).
+  rng.value = allowed.includes(keep) ? keep : allowed[0];
+}
 
 /* ---------- tabs ---------- */
 let TAB = 'sector';
@@ -492,7 +526,7 @@ async function runList() {
   const qs = new URLSearchParams({
     symbols: (l.symbols || []).join(','),
     benchmark: $('#l-bench').value.trim() || l.benchmark || 'SPY',
-    tail: $('#l-tail').value, months: $('#l-months').value, period: $('#l-period').value
+    tail: $('#l-tail').value, period: $('#l-period').value, range: $('#l-range').value
   });
   $('#run').disabled = true;
   setStatus(`Scanning "${l.name}"…`, true);
@@ -543,7 +577,7 @@ document.querySelectorAll('#listTable th').forEach(th => th.onclick = () => {
 $('#run').onclick = () => (TAB === 'list' ? runList() : run());
 async function run() {
   const qs = new URLSearchParams({
-    tail: $('#p-tail').value, months: $('#p-months').value, period: $('#p-period').value,
+    tail: $('#p-tail').value, period: $('#p-period').value, range: $('#p-range').value,
     minSectorChg: $('#p-sec').value, minAngle: $('#p-ang').value, topN: $('#p-top').value,
     spread: $('#p-spread').value
   });
@@ -827,6 +861,7 @@ function drawRRG(sel, rows, title, highlight) {
 }
 
 refreshPill();
+loadOptions();
 loadHistory();
 </script>
 </body>
