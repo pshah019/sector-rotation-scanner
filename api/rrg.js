@@ -49,7 +49,9 @@ const SECTOR_NAMES = {
 
 async function getText(url) {
   const r = await fetch(url, { headers: HDRS });
-  if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+  // Error text reaches the UI, so it carries the status but never the upstream
+  // URL — the provider is an implementation detail, not something to surface.
+  if (!r.ok) throw new Error(`Upstream data request failed (HTTP ${r.status})`);
   return r.text();
 }
 
