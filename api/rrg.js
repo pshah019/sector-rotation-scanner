@@ -323,7 +323,7 @@ export default async function handler(req, res) {
 
     // --- Level 2: members of each qualifying sector, vs their own sector ETF -
     const memberResults = await Promise.all(
-      qualifying.map(async (sec) => {
+      sectors.rows.map(async (sec) => {
         const gk = sec.symbol.toLowerCase() + 'members';
         const grp = groups[gk];
         if (!grp) return { sector: sec.symbol, error: `no member group ${gk}`, rows: [] };
@@ -356,7 +356,12 @@ export default async function handler(req, res) {
         r.chg > minMemberChg
     );
 
-    const scored = scoreCandidates(candidates, sectorChgByEtf).sort((a, b) => b.score - a.score);
+    // Score every up-and-right name in ONE pool so the two tables are directly
+    // comparable, then split on whether that name's sector cleared the gate.
+    const qualSet = new Set(qualifying.map((s) => s.symbol));
+    const scoredAll = scoreCandidates(candidates, sectorChgByEtf).sort((a, b) => b.score - a.score);
+    const scored = scoredAll.filter((c) => qualSet.has(c.sectorEtf));
+    const offSectorCandidates = scoredAll.filter((c) => !qualSet.has(c.sectorEtf));
     const picks = selectPicks(scored, qualifying.map((s) => s.symbol), topN, spread);
 
     // Per-sector candidate counts, so an empty sector is visibly empty rather
@@ -410,11 +415,13 @@ export default async function handler(req, res) {
       sectors: sectors.rows,
       qualifyingSectors: qualifying.map((s) => s.symbol),
       candidatesBySector: bySector,
-      universeSize: allMembers.length,
+      universeSize: allMembers.filter((r) => qualSet.has(r.sectorEtf)).length,
+      offUniverseSize: allMembers.filter((r) => !qualSet.has(r.sectorEtf)).length,
+      offSectorCandidates,
       candidateCount: scored.length,
       picks,
       candidates: scored,
-      members: memberResults.map((m) => ({
+      members: memberResults.filter((m) => qualSet.has(m.sector)).map((m) => ({
         sector: m.sector,
         count: m.rows.length,
         error: m.error || null,
