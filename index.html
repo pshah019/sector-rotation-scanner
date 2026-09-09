@@ -91,6 +91,10 @@
   .pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
     padding:4px 10px;border-radius:999px;border:1px solid var(--hair);color:var(--ink-2)}
   .pill.on{color:var(--good)} .pill.off{color:var(--muted)}
+  .cardhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:2px}
+  .cardhead h2{margin:0}
+  .tabs.sm{padding:2px}
+  .tabs.sm .tab{padding:4px 11px;font-size:12px}
   .connect{display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 0}
   .connect p{margin:0;color:var(--muted);font-size:13px;text-align:center;max-width:440px}
   .tabs{display:flex;gap:3px;background:var(--plane);border:1px solid var(--hair);
@@ -207,8 +211,10 @@
   </section>
 
   <section class="card">
-    <h2>All qualifying candidates</h2>
-    <p class="hint">Every up-and-right member across qualifying sectors, not just the top N. Click a column to sort.</p>
+    <div class="cardhead"><h2>Candidates</h2>
+      <div class="tabs sm" role="tablist"><button class="tab" id="cand-qual" role="tab" aria-selected="true">Qualifying sectors</button><button class="tab" id="cand-off" role="tab" aria-selected="false">Other sectors</button></div>
+      <div class="spacer"></div><button id="dlCand" disabled>&darr; Watchlist</button></div>
+    <p class="hint" id="candHint">Every up-and-right member across qualifying sectors, not just the top N. Click a column to sort.</p>
     <div style="overflow-x:auto;max-height:460px"><table id="candTable"><thead><tr>
       <th class="l" data-k="symbol">Ticker</th><th class="l" data-k="sectorEtf">Sector</th>
       <th class="l" data-k="quadrant">Quadrant</th><th data-k="ratio">RS-Ratio</th><th data-k="mom">RS-Mom</th>
@@ -247,7 +253,7 @@
   </section>
 
   <section class="card">
-    <h2>Results</h2>
+    <div class="cardhead"><h2>Results</h2><div class="spacer"></div><button id="dlList" disabled>&darr; Watchlist</button></div>
     <p class="hint" id="listHint">Pick a saved list or create one, then press <b>Run scan</b>. ▲ marks a ticker whose latest RRG step points up and to the right.</p>
     <div style="overflow-x:auto"><table id="listTable"><thead><tr>
       <th class="l" data-k="symbol">Ticker</th><th class="l" data-k="name">Name</th>
@@ -566,6 +572,7 @@ function renderList() {
 
   const up = d.rows.filter(r => r.upAndRight).map(r => r.symbol);
   drawRRG('#listChart', d.rows, 'Ticker list vs ' + d.benchmark, up);
+  $("#dlList").disabled = !d.rows.length;
 }
 document.querySelectorAll('#listTable th').forEach(th => th.onclick = () => {
   const k = th.dataset.k; if (!k || !LIST_DATA) return;
@@ -699,6 +706,7 @@ function render() {
     `All 11 SPDR sectors vs SPY. ${d.qualifyingSectors.length} at or above ${d.params.minSectorChg}% over the ${d.params.tail}-bar tail: ${d.qualifyingSectors.join(', ') || 'none'}.`;
 
   renderCands();
+  syncCandTabs();
 
   // sector chips
   $('#sectorChips').innerHTML = d.qualifyingSectors.map(s => {
@@ -720,7 +728,8 @@ function render() {
 }
 
 function renderCands() {
-  const rows = [...DATA.candidates].sort((a, b) => {
+  const src = CAND_TAB === "off" ? (DATA.offSectorCandidates || []) : DATA.candidates;
+  const rows = [...src].sort((a, b) => {
     const k = CAND_SORT.k, x = a[k], y = b[k];
     return (typeof x === 'string' ? String(x).localeCompare(String(y)) : x - y) * CAND_SORT.dir;
   });
@@ -860,6 +869,71 @@ function drawRRG(sel, rows, title, highlight) {
   });
 }
 
+/* ---------- TradingView watchlist export ----------
+   TradingView reads a plain .txt of symbols separated by commas, with
+   ###Section lines forming groups. Class shares differ by one character:
+   the data feed writes BRK/B where TradingView wants BRK.B, so symbols are
+   translated on the way out. What changed is reported on screen and never
+   inside the file, where a note would import as a junk row. */
+const TV_CHANGES = [];
+function tvSymbol(s) {
+  const out = String(s).replace(/\//g, ".");
+  if (out !== s) TV_CHANGES.push(s + " \u2192 " + out);
+  return out;
+}
+function downloadWatchlist(filename, sections) {
+  TV_CHANGES.length = 0;
+  const body = sections.filter(s => s.symbols && s.symbols.length)
+    .map(s => (s.name ? "###" + s.name + "\n" : "") + s.symbols.map(tvSymbol).join(","))
+    .join("\n");
+  if (!body) { setStatus("Nothing to export yet"); return; }
+  const url = URL.createObjectURL(new Blob([body + "\n"], { type: "text/plain;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  const n = sections.reduce((x, s) => x + (s.symbols ? s.symbols.length : 0), 0);
+  setStatus("Downloaded " + filename + " \u00b7 " + n + " ticker" + (n === 1 ? "" : "s") +
+    (TV_CHANGES.length ? " \u00b7 reformatted " + TV_CHANGES.join(", ") : ""));
+}
+const tvToday = () => new Date().toISOString().slice(0, 10);
+const tvSlug = (s) => String(s).replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "").toLowerCase();
+
+/* Candidates card: qualifying sectors vs everything the sector gate hid. */
+let CAND_TAB = "qual";
+function syncCandTabs() {
+  const q = (DATA && DATA.candidates) ? DATA.candidates.length : 0;
+  const o = (DATA && DATA.offSectorCandidates) ? DATA.offSectorCandidates.length : 0;
+  $("#cand-qual").textContent = "Qualifying sectors \u00b7 " + q;
+  $("#cand-off").textContent = "Other sectors \u00b7 " + o;
+  $("#cand-qual").setAttribute("aria-selected", String(CAND_TAB === "qual"));
+  $("#cand-off").setAttribute("aria-selected", String(CAND_TAB === "off"));
+  $("#candHint").textContent = CAND_TAB === "qual"
+    ? "Every up-and-right member inside a sector that cleared the threshold. Click a column to sort."
+    : "Up-and-right members whose sector did NOT clear the threshold \u2014 setups the sector filter would otherwise hide.";
+  const n = CAND_TAB === "qual" ? q : o;
+  $("#dlCand").textContent = n ? "\u2193 " + n + " tickers" : "\u2193 Watchlist";
+  $("#dlCand").disabled = !n;
+}
+$("#cand-qual").onclick = () => { CAND_TAB = "qual"; if (DATA) renderCands(); syncCandTabs(); };
+$("#cand-off").onclick = () => { CAND_TAB = "off"; if (DATA) renderCands(); syncCandTabs(); };
+$("#dlCand").onclick = () => {
+  if (!DATA) return;
+  const rows = CAND_TAB === "off" ? (DATA.offSectorCandidates || []) : DATA.candidates;
+  const by = {};
+  rows.forEach(r => { (by[r.sectorEtf] = by[r.sectorEtf] || []).push(r.symbol); });
+  const sections = Object.keys(by).sort().map(k => ({ name: k, symbols: by[k] }));
+  downloadWatchlist("rrg_" + (CAND_TAB === "off" ? "offsector" : "candidates") + "_" + tvToday() + ".txt", sections);
+};
+$("#dlList").onclick = () => {
+  if (!LIST_DATA || !LIST_DATA.rows.length) return;
+  const l = currentList();
+  const name = (l && l.name ? l.name : "Ticker list").replace(/[#,\n\r]/g, " ").trim();
+  downloadWatchlist("rrg_" + (tvSlug(name) || "list") + "_" + tvToday() + ".txt",
+    [{ name: name, symbols: LIST_DATA.rows.map(r => r.symbol) }]);
+};
+
+syncCandTabs();
 refreshPill();
 loadOptions();
 loadHistory();
