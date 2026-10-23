@@ -427,6 +427,13 @@ export default async function handler(req, res) {
         error: m.error || null,
         rows: m.rows,
       })),
+      // All sector members (not just qualifying) -- used by the Explore tab.
+      allMembers: memberResults.map((m) => ({
+        sector: m.sector,
+        count: m.rows.length,
+        error: m.error || null,
+        rows: m.rows,
+      })),        
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
