@@ -34,7 +34,7 @@ const SECTOR_FALLBACK = {
   symbols: ['XLB', 'XLC', 'XLE', 'XLF', 'XLI', 'XLK', 'XLP', 'XLRE', 'XLU', 'XLV', 'XLY'],
 };
 
-const SECTOR_NAMES = {
+export const SECTOR_NAMES = {
   XLB: 'Materials',
   XLC: 'Communication Services',
   XLE: 'Energy',
@@ -61,7 +61,7 @@ async function getText(url) {
 // tracks StockCharts' own sector membership instead of drifting from a
 // hardcoded list.
 // ---------------------------------------------------------------------------
-async function loadGroups() {
+export async function loadGroups() {
   const now = Date.now();
   if (GROUP_CACHE && now - GROUP_CACHE_AT < GROUP_TTL_MS) return GROUP_CACHE;
 
