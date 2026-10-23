@@ -980,14 +980,15 @@ try {
 const r = await fetch('/api/explore?sector=' + etf);
 const j = await r.json();
 if (!j.ok) throw new Error(j.error || 'load failed');
-EXPLORE_MEMBER = j;
+const memberRows = j.rows?.rows || j.rows || [];
+EXPLORE_MEMBER = { ...j, rows: memberRows };
 renderExploreMembers();
-const upRight = j.rows.filter(r => r.dRatio > 0 && r.dMom > 0).map(r => r.symbol);
-drawRRG('#exploreMemberChart', j.rows, etf + ' members vs ' + (j.benchmark || etf), upRight);
+const upRight = memberRows.filter(r => r.dRatio > 0 && r.dMom > 0).map(r => r.symbol);
+drawRRG('#exploreMemberChart', memberRows, etf + ' members vs ' + (j.benchmark || etf), upRight);
 $('#exploreMemberChartTitle').textContent = etf + ' Member RRG · vs ' + (j.benchmark || etf);
-$('#exploreMemberChartHint').textContent = j.rows.length + ' members. Solid arrows point up and to the right.';
-$('#exploreMemberHint').textContent = j.rows.length + ' members loaded. ' + upRight.length + ' point up and to the right.';
-setStatus(etf + ' · ' + j.rows.length + ' members loaded');
+$('#exploreMemberChartHint').textContent = memberRows.length + ' members. Solid arrows point up and to the right.';
+$('#exploreMemberHint').textContent = memberRows.length + ' members loaded. ' + upRight.length + ' point up and to the right.';
+setStatus(etf + ' · ' + memberRows.length + ' members loaded');
 } catch (e) {
 setStatus('Failed: ' + e.message);
 $('#exploreTable tbody').innerHTML = '<tr><td colspan="9" class="empty">Error: ' + e.message + '</td></tr>';
